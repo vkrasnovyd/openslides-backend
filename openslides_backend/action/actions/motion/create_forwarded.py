@@ -25,6 +25,7 @@ class MotionCreateForwarded(BaseMotionCreateForwarded):
             "use_original_number": {"type": "boolean"},
             "with_change_recommendations": {"type": "boolean"},
             "with_amendments": {"type": "boolean"},
+            "with_attachments": {"type": "boolean"},
         },
     )
 
@@ -46,9 +47,10 @@ class MotionCreateForwarded(BaseMotionCreateForwarded):
 
     def update_instance(self, instance: dict[str, Any]) -> dict[str, Any]:
         self.with_amendments = instance.pop("with_amendments", False)
+        self.with_attachments = instance.pop("with_attachments", False)
         self.check_state_allow_forwarding(instance)
-        super().update_instance(instance)
-        return instance
+        return super().update_instance(instance)
+        # return instance
 
     def should_forward_amendments(self, instance: dict[str, Any]) -> bool:
         return self.with_amendments

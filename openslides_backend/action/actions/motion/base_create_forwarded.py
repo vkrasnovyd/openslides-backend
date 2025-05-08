@@ -15,6 +15,8 @@ from ....shared.patterns import fqid_from_collection_and_id
 from ...util.typing import ActionData, ActionResultElement, ActionResults
 from ..motion_change_recommendation.create import MotionChangeRecommendationCreateAction
 from .create_base import MotionCreateBase
+from openslides_backend.shared.interfaces.event import Event, EventType
+from collections.abc import Iterable
 
 
 class BaseMotionCreateForwarded(TextHashMixin, MotionCreateBase):
@@ -69,6 +71,7 @@ class BaseMotionCreateForwarded(TextHashMixin, MotionCreateBase):
                         "derived_motion_ids",
                         "all_derived_motion_ids",
                         "amendment_ids",
+                        "attachment_meeting_mediafile_ids",
                     ],
                 ),
             ],
@@ -293,7 +296,36 @@ class BaseMotionCreateForwarded(TextHashMixin, MotionCreateBase):
                 "non_forwarded_amendment_amount": len(amendment_ids),
                 "amendment_result_data": [],
             }
+
+        if self.with_attachments:
+            forwarded_mediafiles = self.forward_mediafiles(instance)
+            if forwarded_mediafiles.keys():
+                instance["attachment_meeting_mediafile_ids"] = [
+                    id_ for id_ in forwarded_mediafiles["meeting_mediafile"]
+                ]
+
+                for collection, instances in forwarded_mediafiles.items():
+                    for id_, instance_ in instances.items():
+                        fqid = f"{collection}/{id_}"
+                        if instance_.get("meta_new"):
+                            self.validate_relation_fields(instance_)
+                        self.events.extend(
+                            self.create_events(instance_, collection, fqid)
+                        )
+
         return instance
+
+    def create_events(
+        self, instance: dict[str, Any], collection: str = "", fqid: str = ""
+    ) -> Iterable[Event]:
+        """
+        Creates events for one instance of the current model.
+        """
+        collection = collection or self.model.collection
+        fqid = fqid or fqid_from_collection_and_id(collection, instance["id"])
+        meta_new = instance.pop("meta_new", False)
+        event_type = EventType.Create if meta_new else EventType.Update
+        yield self.build_event(event_type, fqid, instance)
 
     def create_amendments(self, amendment_data: ActionData) -> ActionResults | None:
         raise ActionException("Not implemented")
@@ -385,6 +417,143 @@ class BaseMotionCreateForwarded(TextHashMixin, MotionCreateBase):
             instance["origin_meeting_id"] = origin["meeting_id"]
             instance["all_origin_ids"] = origin.get("all_origin_ids", [])
             instance["all_origin_ids"].append(instance["origin_id"])
+
+    @staticmethod
+    def is_orga_wide(mediafile: dict) -> bool:
+        return "organization" in mediafile.get("owner_id", "")
+
+    def forward_mediafiles(self, instance: dict[str, Any]) -> None:
+        # Extract data
+        origin_attachment_ids = self.datastore.get(
+            fqid_from_collection_and_id("motion", instance["origin_id"]),
+            ["attachment_meeting_mediafile_ids"],
+            lock_result=False,
+        ).get("attachment_meeting_mediafile_ids", [])
+
+        origin_meeting_mediafiles = self.datastore.get_many(
+            [
+                GetManyRequest(
+                    "meeting_mediafile",
+                    origin_attachment_ids,
+                    ["mediafile_id", "meeting_id", "is_public", "attachment_ids"],
+                )
+            ],
+            lock_result=False,
+        )["meeting_mediafile"]
+
+        origin_mediafile_ids = [
+            mm.get("mediafile_id") for mm in origin_meeting_mediafiles.values()
+        ]
+
+        origin_mediafiles = self.datastore.get_many(
+            [
+                GetManyRequest(
+                    "mediafile",
+                    origin_mediafile_ids,
+                    [
+                        "id",
+                        "title",
+                        "is_directory",
+                        "filesize",
+                        "filename",
+                        "mimetype",
+                        "pdf_information",
+                        "token",
+                        "published_to_meetings_in_organization_id",
+                        "parent_id",
+                        "child_ids",
+                        "owner_id",
+                        "meeting_mediafile_ids",
+                    ],
+                )
+            ],
+            lock_result=False,
+        )["mediafile"]
+
+        meeting_wide_mediafiles = [
+            mediafile
+            for mediafile in origin_mediafiles.values()
+            if not self.is_orga_wide(mediafile)
+        ]
+
+        new_mediafiles_ids = (
+            iter(self.datastore.reserve_ids("mediafile", len(meeting_wide_mediafiles)))
+            if meeting_wide_mediafiles
+            else iter([])
+        )
+
+        # Create replace map
+        replace_map: dict[int, int] = {
+            origin_mediafile_id: (
+                next(new_mediafiles_ids)
+                if not self.is_orga_wide(mediafile)
+                else origin_mediafile_id
+            )
+            for origin_mediafile_id, mediafile in origin_mediafiles.items()
+        }
+
+        # Replace ids, update instances
+        new_mediafiles: dict[str, Any] = {}
+
+        for origin_id, new_id in replace_map.items():
+            meeting_id = instance["meeting_id"]
+            origin_mediafile = origin_mediafiles.get(origin_id)
+            if self.is_orga_wide(origin_mediafile):
+                new_mediafiles[origin_id] = origin_mediafile
+            else:
+                if not origin_mediafile.get("is_directory"):
+                    self.media.duplicate_mediafile(origin_id, new_id)
+                new_mediafiles[new_id] = {
+                    **origin_mediafile,
+                    "id": new_id,
+                    "owner_id": f"meeting/{meeting_id}",
+                    "meta_new": True,
+                }
+                parent_id = origin_mediafile.pop("parent_id", None)
+                child_ids = origin_mediafile.pop("child_ids", [])
+                if parent_id:
+                    origin_mediafile["parent_id"] = replace_map.get(parent_id)
+                if len(child_ids):
+                    origin_mediafile["child_ids"] = [
+                        replace_map.get(child_id) for child_id in child_ids
+                    ]
+
+        if not len(new_mediafiles):
+            return
+
+        new_meeting_mediafile_ids = iter(
+            self.datastore.reserve_ids("meeting_mediafile", len(new_mediafiles))
+        )
+
+        new_meeting_mediafiles: dict[str, Any] = {}
+
+        for origin_meeting_mediafile in origin_meeting_mediafiles.values():
+            new_id = next(new_meeting_mediafile_ids)
+            mediafile_id = replace_map[origin_meeting_mediafile["mediafile_id"]]
+            new_meeting_mediafiles[new_id] = {
+                "id": new_id,
+                "is_public": origin_meeting_mediafile["is_public"],
+                "mediafile_id": mediafile_id,
+                "meeting_id": instance["meeting_id"],
+                "meta_new": True,
+            }
+            origin_mediafile = new_mediafiles[mediafile_id]
+            if self.is_orga_wide(origin_mediafile):
+                origin_mediafile.get("meeting_mediafile_ids", []).append(new_id)
+                origin_meeting_mediafile.get("attachment_ids", []).append(
+                    f"motion/{instance['id']}"
+                )
+            else:
+                origin_mediafile["meeting_mediafile_ids"] = [new_id]
+                origin_meeting_mediafile["attachment_ids"] = [
+                    f"motion/{instance['id']}"
+                ]
+            instance.setdefault("attachment_meeting_mediafile_ids", []).append(new_id)
+
+        return {
+            "mediafile": new_mediafiles,
+            "meeting_mediafile": new_meeting_mediafiles,
+        }
 
     def get_history_information(self) -> HistoryInformation | None:
         forwarded_entries = defaultdict(list)

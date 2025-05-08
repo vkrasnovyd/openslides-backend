@@ -26,8 +26,14 @@ class MotionCreateForwardedAmendment(BaseMotionCreateForwarded):
             "use_original_submitter": {"type": "boolean"},
             "use_original_number": {"type": "boolean"},
             "with_change_recommendations": {"type": "boolean"},
+            "with_attachments": {"type": "boolean"},
         },
     )
+
+    def update_instance(self, instance: dict[str, Any]) -> dict[str, Any]:
+        self.with_attachments = instance.pop("with_attachments", False)
+        super().update_instance(instance)
+        return instance
 
     def check_permissions(self, instance: dict[str, Any]) -> None:
         super().check_permissions(instance)

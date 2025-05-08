@@ -1,7 +1,9 @@
 from typing import Any
+from unittest.mock import MagicMock
 
 from openslides_backend.action.actions.motion.mixins import TextHashMixin
 from openslides_backend.permissions.permissions import Permissions
+from openslides_backend.shared.util import ONE_ORGANIZATION_FQID, ONE_ORGANIZATION_ID
 from tests.system.action.base import BaseActionTestCase
 
 
@@ -18,6 +20,7 @@ class MotionCreateForwardedTest(BaseActionTestCase):
                 "meeting_user_ids": [1],
                 "user_ids": [1],
                 "structure_level_ids": [1, 2, 3],
+                "meeting_mediafile_ids": [10],
             },
             "meeting/2": {
                 "name": "name_SNLGsvIV",
@@ -106,6 +109,39 @@ class MotionCreateForwardedTest(BaseActionTestCase):
                 "user_id": 1,
                 "meeting_id": 2,
                 "group_ids": [112],
+            },
+            "mediafile/1": {
+                "owner_id": "meeting/1",
+                "mimetype": "text/plain",
+            },
+            "mediafile/2": {
+                "owner_id": ONE_ORGANIZATION_FQID,
+                "published_to_meetings_in_organization_id": ONE_ORGANIZATION_ID,
+                "mimetype": "text/plain",
+            },
+            "mediafile/3": {
+                "owner_id": "meeting/1",
+                "mimetype": "text/plain",
+                "is_directory": True,
+                "child_ids": [4],
+            },
+            "mediafile/4": {
+                "owner_id": "meeting/1",
+                "mimetype": "text/plain",
+                "parent_id": 3,
+            },
+            "mediafile/5": {
+                "owner_id": ONE_ORGANIZATION_FQID,
+                "published_to_meetings_in_organization_id": ONE_ORGANIZATION_ID,
+                "mimetype": "text/plain",
+                "parent_id": 6,
+            },
+            "mediafile/6": {
+                "owner_id": ONE_ORGANIZATION_FQID,
+                "published_to_meetings_in_organization_id": ONE_ORGANIZATION_ID,
+                "mimetype": "text/plain",
+                "is_directory": True,
+                "child_ids": [5],
             },
         }
 
@@ -1670,3 +1706,196 @@ class MotionCreateForwardedTest(BaseActionTestCase):
             },
         )
         self.assert_model_not_exists("motion/6")
+
+    # forward + not (+ base)
+    # 1 meeting
+    # 1 orga
+    # meeting + orga
+    # inside of directory
+
+    def test_forward_with_meeting_wide_mediafile_with_attachments_true(self) -> None:
+        self.forward_with_attachments(
+            with_attachments=True,
+            mediafile_ids=[1],
+        )
+
+    def test_forward_with_meeting_wide_mediafile_with_attachments_false(self) -> None:
+        self.forward_with_attachments(
+            with_attachments=False,
+            mediafile_ids=[1],
+        )
+
+    def test_forward_with_orga_wide_mediafile_with_attachments_true(self) -> None:
+        self.forward_with_attachments(
+            with_attachments=True,
+            mediafile_ids=[2],
+        )
+
+    def test_forward_with_orga_wide_mediafile_with_attachments_false(self) -> None:
+        self.forward_with_attachments(
+            with_attachments=False,
+            mediafile_ids=[2],
+        )
+
+    def test_forward_with_nested_mediafiles_with_attachments_true(self) -> None:
+        self.forward_with_attachments(
+            with_attachments=True,
+            mediafile_ids=[3, 4, 5, 6],
+        )
+
+    def test_forward_with_nested_mediafiles_with_attachments_false(self) -> None:
+        self.forward_with_attachments(
+            with_attachments=False,
+            mediafile_ids=[3, 4, 5, 6],
+        )
+
+    def forward_with_attachments(
+        self,
+        with_attachments: bool,
+        mediafile_ids: list[int],
+    ) -> None:
+
+        total_mediafiles_count = 6
+        meeting_mediafile_ids = [old_id + 6 for old_id in mediafile_ids]
+
+        self.set_models(self.test_model)
+        self.set_models(
+            {
+                "motion/12": {
+                    "attachment_meeting_mediafile_ids": meeting_mediafile_ids
+                },
+                "meeting/1": {
+                    "admin_group_id": 112,
+                    "meeting_mediafile_ids": meeting_mediafile_ids,
+                },
+                "meeting/2": {
+                    "admin_group_id": 112,
+                    "meeting_mediafile_ids": meeting_mediafile_ids,  # Don't set at the beginning
+                },
+            },
+        )
+        for mediafile_id, meeting_mediafile_id in zip(
+            mediafile_ids, meeting_mediafile_ids
+        ):
+            self.set_models(
+                {
+                    f"meeting_mediafile/{meeting_mediafile_id}": {
+                        "meeting_id": 1,
+                        "mediafile_id": mediafile_id,
+                        "is_public": True,
+                        "attachment_ids": ["motion/12"],
+                    },
+                    f"mediafile/{mediafile_id}": {
+                        "meeting_mediafile_ids": [meeting_mediafile_id],
+                    },
+                }
+            )
+
+        self.media.duplicate_mediafile = MagicMock()
+        response = self.request(
+            "motion.create_forwarded",
+            {
+                "title": "Mot 1",
+                "meeting_id": 2,
+                "origin_id": 12,
+                "text": "test",
+                "with_attachments": with_attachments,
+            },
+        )
+        self.assert_status_code(response, 200)
+
+        # Split into 2 more base tests based on with_attachments
+        if not with_attachments:
+            self.assert_model_exists(
+                "motion/13",
+                {
+                    "title": "Mot 1",
+                    "meeting_id": 2,
+                    "origin_id": 12,
+                    "state_id": 34,
+                    "all_origin_ids": [12],
+                    "origin_meeting_id": 1,
+                    "sequential_number": 1,
+                    "attachment_meeting_mediafile_ids": None,
+                },
+            )
+            # TODO: check that new models don't exist
+
+        else:
+            orga_wide_mediafiles = [2, 5, 6]
+            expected_mediafile_ids = [
+                (
+                    old_id
+                    if old_id in orga_wide_mediafiles
+                    else old_id + total_mediafiles_count
+                )
+                for old_id in mediafile_ids
+            ]
+            mediafile_indexes_iter = iter(list(range(1, total_mediafiles_count + 1)))
+            max_old_meeting_mediafile_id = max(meeting_mediafile_ids)
+            expected_meeting_mediafile_ids = [
+                max_old_meeting_mediafile_id + next(mediafile_indexes_iter)
+                for old_id in mediafile_ids
+            ]
+            self.assert_model_exists(
+                "motion/13",
+                {
+                    "title": "Mot 1",
+                    "meeting_id": 2,
+                    "origin_id": 12,
+                    "state_id": 34,
+                    "all_origin_ids": [12],
+                    "origin_meeting_id": 1,
+                    "sequential_number": 1,
+                    "attachment_meeting_mediafile_ids": expected_meeting_mediafile_ids,
+                },
+            )
+            for (
+                old_mediafile_id,
+                new_medifile_id,
+                old_meeting_mediafile_id,
+                new_meeting_mediafile_id,
+            ) in zip(
+                mediafile_ids,
+                expected_mediafile_ids,
+                meeting_mediafile_ids,
+                expected_meeting_mediafile_ids,
+            ):
+                if old_mediafile_id != new_medifile_id:
+                    # Shouldn't fail but fails in test_forward_with_nested_mediafiles_with_attachments_true
+                    self.media.duplicate_mediafile.assert_called_with(
+                        old_mediafile_id, new_medifile_id
+                    )
+                    self.assert_model_exists(
+                        f"mediafile/{new_medifile_id}",
+                        {
+                            "owner_id": "meeting/2",
+                            "mimetype": "text/plain",
+                            "meeting_mediafile_ids": [new_meeting_mediafile_id],
+                        },
+                    )
+                else:
+                    self.assert_model_exists(
+                        f"mediafile/{new_medifile_id}",
+                        {
+                            "owner_id": (
+                                ONE_ORGANIZATION_FQID
+                                if new_medifile_id in orga_wide_mediafiles
+                                else "meeting/2"
+                            ),
+                            "mimetype": "text/plain",
+                            "meeting_mediafile_ids": [
+                                old_meeting_mediafile_id,
+                                new_meeting_mediafile_id,
+                            ],
+                        },
+                    )
+                self.assert_model_exists(
+                    f"meeting_mediafile/{new_meeting_mediafile_id}",
+                    {
+                        "meeting_id": 2,
+                        "mediafile_id": new_medifile_id,
+                        "is_public": True,
+                        "attachment_ids": ["motion/13"],
+                    },
+                )
