@@ -1012,6 +1012,7 @@ def handle_edit_tree(
     dc_edit_tree_dict: dict[str, tuple[dict[str, Any], dict[str, Any]]],
 ) -> str:
     sql = ""
+    return sql
     for collection_name, collection_def in edit_tree_dict.items():
         table_name = HelperGetNames.get_table_name(collection_name)
         dc_fields = dc_edit_tree_dict[collection_name][1]["fields"][1]
