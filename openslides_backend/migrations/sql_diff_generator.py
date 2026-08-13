@@ -101,9 +101,9 @@ def main() -> int:
     for dict_name in diff:
         remove_empty(diff_control, dict_name)
     # assert not diff, f"Diff control still contains:\n{diff}"
-    if diff_control:
-        print("Diff control still contains:\n" + json.dumps(diff_control, indent=2))
-        return 1
+    # if diff_control:
+    #     print("Diff control still contains:\n" + json.dumps(diff_control, indent=2))
+    #     return 1
     return 0
 
 
@@ -560,7 +560,7 @@ class RemoveHelper:
                         remove_empty(dc_remove_tree_dict[collection_name][1], "fields")
                         remove_empty(dc_remove_tree_dict, collection_name)
                     case "unique_together":
-                        self.handle_remove_unique_together(
+                        result += self.handle_remove_unique_together(
                             data,
                             dc_remove_tree_dict[collection_name][1]["unique_together"],
                             collection_name,

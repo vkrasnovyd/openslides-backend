@@ -5,6 +5,7 @@ DROP TABLE deleted_t CASCADE;
 DROP TABLE deleted_another_t CASCADE;
 DROP TRIGGER tr_constant_action_worker_user_id ON action_worker_t;
 ALTER TABLE agenda_item_t DROP COLUMN closed CASCADE;
+ALTER TABLE chat_group_t DROP CONSTRAINT unique_chat_group_meeting_id_name;
 ALTER TABLE committee_t DROP COLUMN parent_id CASCADE;
 DROP TRIGGER tr_log_i_committee_user_ids_from_meeting_user_t ON meeting_user_t;
 DROP TRIGGER tr_log_d_committee_user_ids_from_meeting_user_t ON meeting_user_t;
@@ -34,6 +35,7 @@ DROP TRIGGER equal_meeting_id_on_chat_group_t_read_group_ids ON chat_group_t;
 DROP TRIGGER equal_meeting_id_on_group_t_read_chat_group_ids ON group_t;
 DROP TRIGGER equal_meeting_id_on_chat_group_t_read_group_ids_intermediate ON nm_chat_group_read_group_ids_group_t;
 DROP TYPE enum_assignment_phase;
+DROP TYPE enum_group_permissions;
 DROP TYPE enum_poll_backends;
 
 -- RENAME SECTION --

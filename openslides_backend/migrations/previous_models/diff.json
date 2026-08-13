@@ -102,6 +102,9 @@
                 "chat_group": [
                     [],
                     {
+                        "unique_together": [
+                            "meeting_id, name"
+                        ],
                         "fields": [
                             [],
                             {
@@ -262,6 +265,9 @@
         "enum_types": {
             "assignment": [
                 "phase"
+            ],
+            "group": [
+                "permissions"
             ]
         }
     },
@@ -301,7 +307,11 @@
                 }
             ],
             "meeting_mediafile": [
-                {},
+                {
+                    "unique_together": [
+                        "mediafile_id, meeting_id"
+                    ]
+                },
                 {
                     "fields": [
                         {},
@@ -333,6 +343,22 @@
                             "phase": [
                                 {
                                     "type": "string"
+                                },
+                                {}
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "group": [
+                {},
+                {
+                    "fields": [
+                        {},
+                        {
+                            "permissions": [
+                                {
+                                    "type": "string[]"
                                 },
                                 {}
                             ]
