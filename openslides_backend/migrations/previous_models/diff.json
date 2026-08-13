@@ -160,7 +160,9 @@
                     [],
                     {
                         "fields": [
-                            [],
+                            [
+                                "meeting_user_ids"
+                            ],
                             {
                                 "read_chat_group_ids": [
                                     [
@@ -219,6 +221,17 @@
                                     {}
                                 ]
                             }
+                        ]
+                    }
+                ],
+                "meeting_user": [
+                    [],
+                    {
+                        "fields": [
+                            [
+                                "group_ids"
+                            ],
+                            {}
                         ]
                     }
                 ],
