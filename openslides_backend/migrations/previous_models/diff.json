@@ -42,7 +42,9 @@
                     {
                         "fields": [
                             [
-                                "closed"
+                                "closed",
+                                "parent_id",
+                                "child_ids"
                             ],
                             {
                                 "content_object_id": [
@@ -126,7 +128,8 @@
                         "fields": [
                             [
                                 "parent_id",
-                                "child_ids"
+                                "child_ids",
+                                "organization_tag_ids"
                             ],
                             {
                                 "user_ids": [
@@ -185,11 +188,28 @@
                         ]
                     }
                 ],
+                "mediafile": [
+                    [],
+                    {
+                        "unique_together_strict": [
+                            "title, parent_id, owner_id"
+                        ],
+                        "fields": [
+                            [
+                                "parent_id",
+                                "child_ids"
+                            ],
+                            {}
+                        ]
+                    }
+                ],
                 "meeting": [
                     [],
                     {
                         "fields": [
-                            [],
+                            [
+                                "organization_tag_ids"
+                            ],
                             {
                                 "export_pdf_fontsize": [
                                     [
@@ -240,8 +260,21 @@
                     {
                         "fields": [
                             [
+                                "state_extension_reference_ids",
+                                "referenced_in_motion_state_extension_ids",
                                 "agenda_item_id",
                                 "history_entry_ids"
+                            ],
+                            {}
+                        ]
+                    }
+                ],
+                "organization_tag": [
+                    [],
+                    {
+                        "fields": [
+                            [
+                                "tagged_ids"
                             ],
                             {}
                         ]

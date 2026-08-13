@@ -501,9 +501,11 @@ class EqualFieldsHelper:
                 [
                     (own_table, own_trigger_name),
                     (foreign_table, foreign_trigger_name),
-                    (intermediate_table, intermediate_trigger_name),
                 ]
             )
+            if intermediate_table not in RemoveHelper.intermediate_tables_to_remove:
+                to_drop.append((intermediate_table, intermediate_trigger_name))
+
         return to_drop
 
     # Helpers
@@ -586,7 +588,7 @@ class RemoveHelper:
                             "unique_together",
                         )
                         remove_empty(dc_remove_tree_dict, collection_name)
-        for table in self.intermediate_tables_to_remove:
+        for table in sorted(self.intermediate_tables_to_remove):
             result += AlterSchemaHelper.get_drop_table_statement(table)
         result += EqualFieldsHelper.handle_alter_equal_fields()
         return result
