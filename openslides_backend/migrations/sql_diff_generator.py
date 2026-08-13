@@ -30,6 +30,7 @@ from openslides_backend.migrations.yaml_diff_generator import (
     dumpjson,
     generate_diff,
     prev_models_context,
+    was_view_field,
 )
 from openslides_backend.shared.exceptions import BadCodingException
 from openslides_backend.shared.patterns import Collection, CollectionField
@@ -609,22 +610,19 @@ class RemoveHelper:
         result = ""
         for field_name in remove_list:
             field_def = PREV_MODELS[collection_name]["fields"][field_name]
+            drop_column = True
 
             if field_def.get("to"):
+                alter_views.add(collection_name)
+                if was_view_field(collection_name, field_name, field_def):
+                    drop_column = False
                 with prev_models_context():
-                    is_view_field, _, write_fields = get_view_field_state_write_fields(
-                        collection_name, field_name, field_def
-                    )
                     if field_def.get("equal_fields"):
                         EqualFieldsHelper.update_equal_fields_diff(
                             collection_name, field_name
                         )
 
-                alter_views_conditionally(
-                    collection_name, bool(write_fields), is_view_field
-                )
-
-            if collection_name not in alter_views:
+            if drop_column:
                 result += AlterSchemaHelper.get_drop_column_statement(
                     collection_name, field_name
                 )

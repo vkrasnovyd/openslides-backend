@@ -13,6 +13,7 @@ DROP TRIGGER tr_log_i_committee_user_ids_from_nm_committee_manager_idd4a2a53 ON 
 DROP TRIGGER tr_log_d_committee_user_ids_from_nm_committee_manager_id82dfd00 ON nm_committee_manager_ids_user_t;
 DROP TRIGGER tr_log_iu_committee_user_ids_from_user_t ON user_t;
 DROP TRIGGER tr_log_ud_committee_user_ids_from_user_t ON user_t;
+ALTER TABLE history_entry_t DROP COLUMN model_id CASCADE;
 ALTER TABLE meeting_t DROP CONSTRAINT minimum_meeting_export_pdf_fontsize;
 ALTER TABLE meeting_t DROP CONSTRAINT maximum_meeting_export_pdf_fontsize;
 ALTER TABLE meeting_t ALTER COLUMN assignment_poll_default_backend DROP DEFAULT;
@@ -43,6 +44,17 @@ DROP TYPE enum_poll_backends;
 -- ADD SECTION --
 
 -- VIEWS UPDATE SECTION --
+CREATE OR REPLACE VIEW "assignment" AS SELECT *,
+(select array_agg(ac.id ORDER BY ac.id) from assignment_candidate_t ac where ac.assignment_id = a.id) as candidate_ids,
+(select array_agg(p.id ORDER BY p.id) from poll_t p where p.content_object_id_assignment_id = a.id) as poll_ids,
+(select ai.id from agenda_item_t ai where ai.content_object_id_assignment_id = a.id) as agenda_item_id,
+(select l.id from list_of_speakers_t l where l.content_object_id_assignment_id = a.id) as list_of_speakers_id,
+(select array_agg(g.tag_id ORDER BY g.tag_id) from gm_tag_tagged_ids_t g where g.tagged_id_assignment_id = a.id) as tag_ids,
+(select array_agg(g.meeting_mediafile_id ORDER BY g.meeting_mediafile_id) from gm_meeting_mediafile_attachment_ids_t g where g.attachment_id_assignment_id = a.id) as attachment_meeting_mediafile_ids,
+(select array_agg(p.id ORDER BY p.id) from projection_t p where p.content_object_id_assignment_id = a.id) as projection_ids
+FROM assignment_t a;
+
+
 CREATE OR REPLACE VIEW "committee" AS SELECT *,
 (select array_agg(m.id ORDER BY m.id) from meeting_t m where m.committee_id = c.id) as meeting_ids,
 (select array_agg(n.user_id ORDER BY n.user_id) from nm_committee_manager_ids_user_t n where n.committee_id = c.id) as manager_ids,
@@ -55,6 +67,9 @@ CREATE OR REPLACE VIEW "committee" AS SELECT *,
 FROM committee_t c;
 
 comment on column "committee".user_ids is 'Calculated field: All users which are in a group of a meeting, belonging to the committee or beeing manager of the committee';
+
+CREATE OR REPLACE VIEW "history_entry" AS SELECT * FROM history_entry_t h;
+
 
 CREATE OR REPLACE VIEW "motion" AS SELECT *,
 (select array_agg(mt.id ORDER BY mt.id) from motion_t mt where mt.lead_motion_id = m.id) as amendment_ids,
@@ -79,8 +94,7 @@ CREATE OR REPLACE VIEW "motion" AS SELECT *,
 (select array_agg(g.tag_id ORDER BY g.tag_id) from gm_tag_tagged_ids_t g where g.tagged_id_motion_id = m.id) as tag_ids,
 (select array_agg(g.meeting_mediafile_id ORDER BY g.meeting_mediafile_id) from gm_meeting_mediafile_attachment_ids_t g where g.attachment_id_motion_id = m.id) as attachment_meeting_mediafile_ids,
 (select array_agg(p.id ORDER BY p.id) from projection_t p where p.content_object_id_motion_id = m.id) as projection_ids,
-(select array_agg(p.id ORDER BY p.id) from personal_note_t p where p.content_object_id_motion_id = m.id) as personal_note_ids,
-(select array_agg(h.id ORDER BY h.id) from history_entry_t h where h.model_id_motion_id = m.id) as history_entry_ids
+(select array_agg(p.id ORDER BY p.id) from personal_note_t p where p.content_object_id_motion_id = m.id) as personal_note_ids
 FROM motion_t m;
 
 
@@ -102,7 +116,6 @@ CREATE OR REPLACE VIEW "user" AS SELECT *,
 (select array_agg(v.id ORDER BY v.id) from vote_t v where v.delegated_user_id = u.id) as delegated_vote_ids,
 (select array_agg(p.id ORDER BY p.id) from poll_candidate_t p where p.user_id = u.id) as poll_candidate_ids,
 (select array_agg(h.id ORDER BY h.id) from history_position_t h where h.user_id = u.id) as history_position_ids,
-(select array_agg(h.id ORDER BY h.id) from history_entry_t h where h.model_id_user_id = u.id) as history_entry_ids,
 (
   SELECT array_agg(DISTINCT mu.meeting_id ORDER BY mu.meeting_id)
   FROM meeting_user_t mu

@@ -59,7 +59,9 @@
                     [],
                     {
                         "fields": [
-                            [],
+                            [
+                                "history_entry_ids"
+                            ],
                             {
                                 "candidate_ids": [
                                     [
@@ -170,6 +172,17 @@
                         ]
                     }
                 ],
+                "history_entry": [
+                    [],
+                    {
+                        "fields": [
+                            [
+                                "model_id"
+                            ],
+                            {}
+                        ]
+                    }
+                ],
                 "meeting": [
                     [],
                     {
@@ -214,7 +227,8 @@
                     {
                         "fields": [
                             [
-                                "agenda_item_id"
+                                "agenda_item_id",
+                                "history_entry_ids"
                             ],
                             {}
                         ]
@@ -235,7 +249,9 @@
                     [],
                     {
                         "fields": [
-                            [],
+                            [
+                                "history_entry_ids"
+                            ],
                             {
                                 "username": [
                                     [
