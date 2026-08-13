@@ -4,16 +4,30 @@
         {}
     ],
     "remove": {
+        "_meta": [
+            [],
+            {
+                "enum_definitions": [
+                    [
+                        "poll_backends"
+                    ],
+                    {}
+                ]
+            }
+        ],
         "collections": [
             [
-                "deleted"
+                "deleted",
+                "deleted_another"
             ],
             {
                 "agenda_item": [
                     [],
                     {
                         "fields": [
-                            [],
+                            [
+                                "closed"
+                            ],
                             {
                                 "content_object_id": [
                                     [
@@ -85,6 +99,18 @@
                         ]
                     }
                 ],
+                "committee": [
+                    [],
+                    {
+                        "fields": [
+                            [
+                                "parent_id",
+                                "child_ids"
+                            ],
+                            {}
+                        ]
+                    }
+                ],
                 "group": [
                     [],
                     {
@@ -94,6 +120,22 @@
                                 "read_chat_group_ids": [
                                     [
                                         "equal_fields"
+                                    ],
+                                    {}
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                "meeting": [
+                    [],
+                    {
+                        "fields": [
+                            [],
+                            {
+                                "assignment_poll_default_backend": [
+                                    [
+                                        "default"
                                     ],
                                     {}
                                 ]
@@ -140,7 +182,12 @@
                     }
                 ]
             }
-        ]
+        ],
+        "enum_types": {
+            "assignment": [
+                "phase"
+            ]
+        }
     },
     "add": null,
     "edit": [
@@ -196,6 +243,82 @@
                                         {}
                                     ]
                                 }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "assignment": [
+                {},
+                {
+                    "fields": [
+                        {},
+                        {
+                            "phase": [
+                                {
+                                    "type": "string"
+                                },
+                                {}
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "meeting": [
+                {},
+                {
+                    "fields": [
+                        {},
+                        {
+                            "motion_poll_default_backend": [
+                                {
+                                    "type": "string"
+                                },
+                                {}
+                            ],
+                            "assignment_poll_default_backend": [
+                                {
+                                    "type": "string"
+                                },
+                                {}
+                            ],
+                            "poll_default_backend": [
+                                {
+                                    "type": "string"
+                                },
+                                {}
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "poll": [
+                {},
+                {
+                    "fields": [
+                        {},
+                        {
+                            "backend": [
+                                {
+                                    "type": "string"
+                                },
+                                {}
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "user": [
+                {},
+                {
+                    "fields": [
+                        {},
+                        {
+                            "pronoun": [
+                                {
+                                    "maxLength": null
+                                },
+                                {}
                             ]
                         }
                     ]
