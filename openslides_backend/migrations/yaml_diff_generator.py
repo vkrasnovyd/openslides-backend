@@ -234,7 +234,8 @@ def create_remove_recursive(
                 # after implementing https://github.com/OpenSlides/openslides-meta/issues/542
                 if len(path) > 2 and key != "sql":
                     if not (
-                        "type" in prev_value
+                        isinstance(prev_value, dict)
+                        and "type" in prev_value
                         and prev_value.get("to")
                         and was_view_field(path[0], key, prev_value)
                     ):

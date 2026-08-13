@@ -21,6 +21,22 @@
                 "deleted_another"
             ],
             {
+                "action_worker": [
+                    [],
+                    {
+                        "fields": [
+                            [],
+                            {
+                                "user_id": [
+                                    [
+                                        "constant"
+                                    ],
+                                    {}
+                                ]
+                            }
+                        ]
+                    }
+                ],
                 "agenda_item": [
                     [],
                     {
@@ -107,7 +123,31 @@
                                 "parent_id",
                                 "child_ids"
                             ],
-                            {}
+                            {
+                                "user_ids": [
+                                    [],
+                                    {
+                                        "log_triggers": [
+                                            {
+                                                "on_table": "meeting_user_t",
+                                                "log_collection_id_sql": "SELECT committee_id FROM meeting_t WHERE id = ($1).meeting_id",
+                                                "log_value_column": "user_id"
+                                            },
+                                            {
+                                                "on_table": "nm_committee_manager_ids_user_t",
+                                                "log_collection_id_column": "committee_id",
+                                                "log_value_column": "user_id"
+                                            },
+                                            {
+                                                "on_table": "user_t",
+                                                "on_columns": "home_committee_id",
+                                                "log_collection_id_column": "home_committee_id",
+                                                "log_value_column": "id"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
                         ]
                     }
                 ],
@@ -133,6 +173,13 @@
                         "fields": [
                             [],
                             {
+                                "export_pdf_fontsize": [
+                                    [
+                                        "minimum",
+                                        "maximum"
+                                    ],
+                                    {}
+                                ],
                                 "assignment_poll_default_backend": [
                                     [
                                         "default"
@@ -178,6 +225,35 @@
                                 "attachment_meeting_mediafile_ids"
                             ],
                             {}
+                        ]
+                    }
+                ],
+                "user": [
+                    [],
+                    {
+                        "fields": [
+                            [],
+                            {
+                                "username": [
+                                    [
+                                        "unique",
+                                        "required"
+                                    ],
+                                    {}
+                                ],
+                                "saml_id": [
+                                    [
+                                        "minLength"
+                                    ],
+                                    {}
+                                ],
+                                "committee_ids": [
+                                    [
+                                        "sql"
+                                    ],
+                                    {}
+                                ]
+                            }
                         ]
                     }
                 ]

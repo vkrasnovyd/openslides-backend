@@ -663,9 +663,7 @@ class RemoveHelper:
                             collection_name, constraint_name
                         )
                     case "sql":
-                        result += AlterSchemaHelper.get_drop_view_statement(
-                            collection_name
-                        )
+                        alter_views.add(collection_name)
                     case "constant":
                         result += AlterSchemaHelper.get_drop_trigger_statement(
                             collection_name,

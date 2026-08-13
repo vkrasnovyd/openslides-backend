@@ -3,9 +3,21 @@
 -- REMOVE SECTION --
 DROP TABLE deleted_t CASCADE;
 DROP TABLE deleted_another_t CASCADE;
+DROP TRIGGER tr_constant_action_worker_user_id ON action_worker_t;
 ALTER TABLE agenda_item_t DROP COLUMN closed CASCADE;
 ALTER TABLE committee_t DROP COLUMN parent_id CASCADE;
+DROP TRIGGER tr_log_i_committee_user_ids_from_meeting_user_t ON meeting_user_t;
+DROP TRIGGER tr_log_d_committee_user_ids_from_meeting_user_t ON meeting_user_t;
+DROP TRIGGER tr_log_i_committee_user_ids_from_nm_committee_manager_idd4a2a53 ON nm_committee_manager_ids_user_t;
+DROP TRIGGER tr_log_d_committee_user_ids_from_nm_committee_manager_id82dfd00 ON nm_committee_manager_ids_user_t;
+DROP TRIGGER tr_log_iu_committee_user_ids_from_user_t ON user_t;
+DROP TRIGGER tr_log_ud_committee_user_ids_from_user_t ON user_t;
+ALTER TABLE meeting_t DROP CONSTRAINT minimum_meeting_export_pdf_fontsize;
+ALTER TABLE meeting_t DROP CONSTRAINT maximum_meeting_export_pdf_fontsize;
 ALTER TABLE meeting_t ALTER COLUMN assignment_poll_default_backend DROP DEFAULT;
+ALTER TABLE user_t DROP CONSTRAINT unique_user_username;
+ALTER TABLE user_t ALTER COLUMN username DROP NOT NULL;
+ALTER TABLE user_t DROP CONSTRAINT minlength_user_saml_id;
 DROP TRIGGER equal_meeting_id_on_agenda_item_t_content_object_id_assieb89ee8 ON agenda_item_t;
 DROP TRIGGER equal_meeting_id_on_assignment_t_agenda_item_id ON assignment_t;
 DROP TRIGGER equal_meeting_id_on_agenda_item_t_content_object_id_motion_id ON agenda_item_t;
@@ -31,31 +43,6 @@ DROP TYPE enum_poll_backends;
 -- VIEWS UPDATE SECTION --
 CREATE OR REPLACE VIEW "committee" AS SELECT *,
 (select array_agg(m.id ORDER BY m.id) from meeting_t m where m.committee_id = c.id) as meeting_ids,
-(
-  SELECT array_agg(DISTINCT user_id ORDER BY user_id)
-  FROM (
-    -- Select user_ids from committees meetings
-    SELECT mu.user_id
-    FROM meeting_t AS m
-    INNER JOIN meeting_user_t AS mu ON mu.meeting_id = m.id
-    WHERE m.committee_id = c.id
-
-    UNION
-
-    -- Select user_ids from committee managers
-    SELECT cmu.user_id
-    FROM nm_committee_manager_ids_user_t cmu
-    WHERE cmu.committee_id = c.id
-
-    UNION
-
-    -- Select user_id from home committees
-    SELECT u.id
-    FROM user_t u
-    WHERE u.home_committee_id = c.id
-  ) _
-) AS user_ids
-,
 (select array_agg(n.user_id ORDER BY n.user_id) from nm_committee_manager_ids_user_t n where n.committee_id = c.id) as manager_ids,
 (select array_agg(n.all_parent_id ORDER BY n.all_parent_id) from nm_committee_all_child_ids_committee_t n where n.all_child_id = c.id) as all_parent_ids,
 (select array_agg(n.all_child_id ORDER BY n.all_child_id) from nm_committee_all_child_ids_committee_t n where n.all_parent_id = c.id) as all_child_ids,
@@ -102,3 +89,25 @@ CREATE OR REPLACE VIEW "topic" AS SELECT *,
 (select array_agg(p.id ORDER BY p.id) from projection_t p where p.content_object_id_topic_id = t.id) as projection_ids
 FROM topic_t t;
 
+
+CREATE OR REPLACE VIEW "user" AS SELECT *,
+(select array_agg(n.meeting_id ORDER BY n.meeting_id) from nm_meeting_present_user_ids_user_t n where n.user_id = u.id) as is_present_in_meeting_ids,
+(select array_agg(n.committee_id ORDER BY n.committee_id) from nm_committee_manager_ids_user_t n where n.user_id = u.id) as committee_management_ids,
+(select array_agg(m.id ORDER BY m.id) from meeting_user_t m where m.user_id = u.id) as meeting_user_ids,
+(select array_agg(n.poll_id ORDER BY n.poll_id) from nm_poll_voted_ids_user_t n where n.user_id = u.id) as poll_voted_ids,
+(select array_agg(o.id ORDER BY o.id) from option_t o where o.content_object_id_user_id = u.id) as option_ids,
+(select array_agg(v.id ORDER BY v.id) from vote_t v where v.user_id = u.id) as vote_ids,
+(select array_agg(v.id ORDER BY v.id) from vote_t v where v.delegated_user_id = u.id) as delegated_vote_ids,
+(select array_agg(p.id ORDER BY p.id) from poll_candidate_t p where p.user_id = u.id) as poll_candidate_ids,
+(select array_agg(h.id ORDER BY h.id) from history_position_t h where h.user_id = u.id) as history_position_ids,
+(select array_agg(h.id ORDER BY h.id) from history_entry_t h where h.model_id_user_id = u.id) as history_entry_ids,
+(
+  SELECT array_agg(DISTINCT mu.meeting_id ORDER BY mu.meeting_id)
+  FROM meeting_user_t mu
+  WHERE mu.user_id = u.id
+) AS meeting_ids
+
+FROM user_t u;
+
+comment on column "user".committee_ids is 'Calculated field: Returns committee_ids, where the user is manager or member in a meeting';
+comment on column "user".meeting_ids is 'Calculated. All ids from meetings calculated via meeting_user.';
