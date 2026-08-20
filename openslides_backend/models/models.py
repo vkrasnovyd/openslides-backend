@@ -1541,14 +1541,22 @@ class MeetingUser(Model):
             [],
         ),
     )
-    poll_option_ids = fields.RelationListField(
-        to={"poll_option": "meeting_user_id"}, is_view_field=True, is_primary=True
-    )
     acting_ballot_ids = fields.RelationListField(
         to={"poll_ballot_user": "acting_meeting_user_id"}, is_view_field=True
     )
     represented_ballot_ids = fields.RelationListField(
         to={"poll_ballot_user": "represented_meeting_user_id"}, is_view_field=True
+    )
+    entitled_at_poll_ids = fields.RelationListField(
+        to={"poll": "entitled_meeting_user_ids"},
+        is_view_field=True,
+        is_primary=True,
+        write_fields=(
+            "nm_meeting_user_entitled_at_poll_ids_poll_t",
+            "meeting_user_id",
+            "poll_id",
+            [],
+        ),
     )
     chat_message_ids = fields.RelationListField(
         to={"chat_message": "meeting_user_id"}, is_view_field=True
@@ -2369,6 +2377,16 @@ class Poll(Model, PollModelMixin):
         is_view_field=True,
         write_fields=("nm_group_poll_ids_poll_t", "poll_id", "group_id", []),
     )
+    entitled_meeting_user_ids = fields.RelationListField(
+        to={"meeting_user": "entitled_at_poll_ids"},
+        is_view_field=True,
+        write_fields=(
+            "nm_meeting_user_entitled_at_poll_ids_poll_t",
+            "poll_id",
+            "meeting_user_id",
+            [],
+        ),
+    )
     projection_ids = fields.RelationListField(
         to={"projection": "content_object_id"},
         on_delete=fields.OnDelete.CASCADE,
@@ -2567,7 +2585,7 @@ class PollOption(Model):
     poll_id = fields.RelationField(to={"poll": "option_ids"}, required=True)
     weight = fields.IntegerField()
     text = fields.CharField()
-    meeting_user_id = fields.RelationField(to={"meeting_user": "poll_option_ids"})
+    user_id = fields.RelationField(to={"user": "poll_option_ids"})
 
 
 class Projection(Model):
@@ -3072,6 +3090,9 @@ class User(Model):
         is_view_field=True,
     )
     home_committee_id = fields.RelationField(to={"committee": "native_user_ids"})
+    poll_option_ids = fields.RelationListField(
+        to={"poll_option": "user_id"}, is_view_field=True, is_primary=True
+    )
     history_position_ids = fields.RelationListField(
         to={"history_position": "user_id"}, is_view_field=True
     )

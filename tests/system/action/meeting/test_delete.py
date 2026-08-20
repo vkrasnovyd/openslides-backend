@@ -257,11 +257,11 @@ class MeetingDeleteActionTest(BaseActionTestCase):
                 },
                 "poll_option/180": {
                     "poll_id": 150,
-                    "meeting_user_id": 1,
+                    "user_id": 2
                 },
                 "poll_option/181": {
                     "poll_id": 150,
-                    "meeting_user_id": 2,
+                    "user_id": 3
                 },
                 "list_of_speakers/190": {
                     "meeting_id": 1,

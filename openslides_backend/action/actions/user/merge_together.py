@@ -1,4 +1,7 @@
-from typing import Any
+from typing import Any, cast
+
+from psycopg.types.json import Jsonb
+from collections import defaultdict
 
 from openslides_backend.services.database.interface import PartialModel
 from openslides_backend.shared.history_events import (
@@ -107,8 +110,7 @@ class UserMergeTogether(
                 ],
                 "merge": [
                     "committee_management_ids",
-                    "history_entry_ids",
-                    "history_position_ids",
+                    "poll_option_ids",  # throw error if conflict on same poll
                 ],
                 "deep_create_merge": {
                     "meeting_user_ids": "meeting_user",
@@ -385,6 +387,78 @@ class UserMergeTogether(
                 UserDelete,
                 [{"id": id_} for id_ in to_delete],
             )
+
+    def check_polls(self, into: PartialModel, other_models: list[PartialModel]) -> None:
+        messages: list[str] = self.check_polls_helper(into, other_models)
+
+        all_models = [into, *other_models]
+        ballot_poll_ids_per_user_id: dict[int, set[int]] = defaultdict(set)
+        option_poll_ids_per_user_id: dict[int, set[int]] = defaultdict(set)
+
+        for model in all_models:
+            if len(
+                (o_ids := model.get("poll_option_ids", []))
+                + (
+                    b_ids := list(
+                        {
+                            id_
+                            for id_ in [
+                                *model.get("acting_ballot_ids", []),
+                                *model.get("represented_ballot_ids", []),
+                            ]
+                        }
+                    )
+                )
+            ):
+                many_models = self.datastore.get_many(
+                    [
+                        GetManyRequest("poll_option", o_ids, ["poll_id"]),
+                        GetManyRequest("poll_ballot_user", b_ids, ["poll_id"]),
+                    ]
+                )
+                if o_ids:
+                    option_poll_ids_per_user_id[model["id"]].update(
+                        {
+                            option["poll_id"]
+                            for option in many_models["poll_option"].values()
+                        }
+                    )
+                if b_ids:
+                    ballot_poll_ids_per_user_id[model["id"]].update(
+                        {
+                            ballot["poll_id"]
+                            for ballot in many_models["poll_ballot_user"].values()
+                        }
+                    )
+        ballot_conflicts = self._get_conflicts_between_users(
+            ballot_poll_ids_per_user_id
+        )
+        option_conflicts = self._get_conflicts_between_users(
+            option_poll_ids_per_user_id
+        )
+        if len(ballot_conflicts):
+            messages.append(
+                f"among the selected users multiple voted in poll(s) {', '.join([str(id_) for id_ in ballot_conflicts])}"
+            )
+        if len(option_conflicts):
+            messages.append(
+                f"multiple of the selected users are among the options in poll(s) {', '.join([str(id_) for id_ in option_conflicts])}"
+            )
+        if len(messages):
+            raise ActionException(
+                f"Cannot carry out merge into user/{into['id']}, because {' and '.join(messages)}"
+            )
+
+    def _get_conflicts_between_users(self, ids_map: dict[int, set[int]]) -> set[int]:
+        seen_ids = set()
+        duplicates = set()
+        for ids in ids_map.values():
+            for id_ in ids:
+                if id_ in seen_ids:
+                    duplicates.add(id_)
+                else:
+                    seen_ids.add(id_)
+        return duplicates
 
     def get_merge_comparison_hash(
         self, collection: Collection, model: PartialModel

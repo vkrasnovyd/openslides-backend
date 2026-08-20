@@ -98,12 +98,6 @@ class PollModelMixin:
     METHOD_RATING_APPROVAL = "rating_approval"
     METHOD_RATING_STV_SCOTTISH = "stv_scottish"
 
-    CONFIG_TYPE_APPROVAL = "poll_config_approval"
-    CONFIG_TYPE_SELECTION = "poll_config_selection"
-    CONFIG_TYPE_RATING_SCORE = "poll_config_rating_score"
-    CONFIG_TYPE_RATING_APPROVAL = "poll_config_rating_approval"
-    CONFIG_TYPE_RATING_STV_SCOTTISH = "poll_config_stv_scottish"
-
     ONEHUNDRED_PERCENT_BASE_NO_GENERAL = "no_general"
     ONEHUNDRED_PERCENT_BASE_YES_NO = "yes_no"
     ONEHUNDRED_PERCENT_BASE_VALID = "valid"
@@ -111,6 +105,3 @@ class PollModelMixin:
     ONEHUNDRED_PERCENT_BASE_ENTITLED = "entitled"
     ONEHUNDRED_PERCENT_BASE_ENTITLED_PRESENT = "entitled_present"
     ONEHUNDRED_PERCENT_BASE_DISABLED = "disabled"
-
-    OPTION_TYPE_TEXT = "text"
-    OPTION_TYPE_MEETING_USER = "meeting_user"

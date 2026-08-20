@@ -142,10 +142,6 @@ class MeetingUserUpdate(BaseActionTestCase):
                     "sequential_number": 1,
                     "list_of_speakers_id": 1,
                 },
-                "poll_option/1": {
-                    "poll_id": 1,
-                    "meeting_user_id": 2,
-                },
                 "poll_config_approval/1": {
                     "onehundred_percent_base": Poll.ONEHUNDRED_PERCENT_BASE_VALID
                 },
@@ -173,7 +169,6 @@ class MeetingUserUpdate(BaseActionTestCase):
             "meeting_user.update",
             {
                 "id": 3,
-                "poll_option_ids": [1],
                 "acting_ballot_ids": [1],
                 "represented_ballot_ids": [2],
             },
@@ -182,12 +177,10 @@ class MeetingUserUpdate(BaseActionTestCase):
         self.assert_status_code(response, 200)
         expected: dict[str, dict[str, Any]] = {
             "meeting_user/3": {
-                "poll_option_ids": [1],
                 "acting_ballot_ids": [1],
                 "represented_ballot_ids": [2],
             },
             "poll/1": {"ballot_user_ids": [1, 2]},
-            "poll_option/1": {"meeting_user_id": 3},
             "poll_ballot_user/1": {
                 "poll_id": 1,
                 "acting_meeting_user_id": 3,

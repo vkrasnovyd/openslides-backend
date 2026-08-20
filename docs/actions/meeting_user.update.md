@@ -5,7 +5,6 @@
     id: Id;
 
 // Optional
-    poll_option_ids: Id[];
     acting_ballot_ids: Id[];
     represented_ballot_ids: Id[];
 
