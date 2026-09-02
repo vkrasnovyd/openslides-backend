@@ -31,14 +31,6 @@ class BaseMigration:
 
     # -- Defined in DiffMixin --
     # TODO: Implement here and in diff generator
-    # Contains:
-    #   * New required fields that were added to existing collections
-    #   * Fields that received `required: true`
-    # Used in:
-    #   * cleanup: to set NOT NULL
-    added_required_fields: dict[Collection, set[Field]]
-
-    # TODO: Implement here and in diff generator
     # Describes relations in which write field becomes a view field
     # due to rename (data should be moved).
     # Used in:
@@ -54,7 +46,6 @@ class BaseMigration:
     #     unfitting values in the data_manipulation mathod
     enum_types_to_apply: dict[Collection, dict[Field, str]]
 
-    # TODO: Implement here and in diff generator
     # Contains:
     #   * String with statements that should be executed in the cleanup method.
     #     Currently needed for creating new views for the types changed for
@@ -114,8 +105,7 @@ class BaseMigration:
             stash: data that was previously stashed by data_preparation.
         """
 
-    @staticmethod
-    def cleanup(curs: Cursor[DictRow]) -> None:
+    def cleanup(self, curs: Cursor[DictRow]) -> None:
         """
         This function can be overridden by subclasses in order to implement the desired behavior.
         Purpose:
@@ -123,10 +113,8 @@ class BaseMigration:
         Input:
             cursor
         """
-        # If the corresponding maps are defined:
-        #   Set NOT NULL for added_required_fields
-        #   Drop tables from copied_tables
-        #   Apply enum types for fields from enum_types_to_apply
+        if self.cleanup_statements:
+            curs.execute(self.cleanup_statements)
 
     @staticmethod
     def replace_from_filters_map(

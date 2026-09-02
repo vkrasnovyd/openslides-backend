@@ -367,8 +367,7 @@ class Migration(BaseMigration):
         for command, values in insert_intermediate_t_commands:
             curs.execute(command, values)
 
-    @staticmethod
-    def cleanup(curs: Cursor[DictRow]) -> None:
+    def cleanup(self, curs: Cursor[DictRow]) -> None:
         """
         Purpose:
             Deletes the old tables
