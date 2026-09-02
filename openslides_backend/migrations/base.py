@@ -38,14 +38,6 @@ class BaseMigration:
     #   * data_manipulation: to perform move
     switched_writing_side: Any
 
-    # TODO: Implement here and in diff generator
-    # Contains:
-    #   * Map of field names to the corresponding enum types names per collection
-    # Used in:
-    #   * cleanup: to apply the types to the fields after handling the
-    #     unfitting values in the data_manipulation mathod
-    enum_types_to_apply: dict[Collection, dict[Field, str]]
-
     # Contains:
     #   * String with statements that should be executed in the cleanup method.
     #     Currently needed for creating new views for the types changed for
