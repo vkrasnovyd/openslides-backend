@@ -1,3 +1,14 @@
+# Weird TODOs:
+
+- merge feature/dammi
+- finish diff generator
+- get rid of meeting_id globally (cleanup tests)
+- Add defaults to tests:
+  - meeting_setting:
+    - enable_max_yes_votes
+    - required_majority
+    - pie
+
 # Short overview
 
 Current split between automatic and manual actions:

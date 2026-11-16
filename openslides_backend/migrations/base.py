@@ -75,6 +75,7 @@ class BaseMigration:
         self.logger = logger
         self.verbose = verbose
 
+    # TODO: split
     def check_prerequisites(self) -> str:
         """
         This function can be overridden by subclasses in order to implement the desired behavior.
