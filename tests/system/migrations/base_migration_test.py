@@ -305,6 +305,8 @@ class BaseMigrationTestCase(TestCase):
 
         return data
 
+    # TODO: pass curs
+    # TODO: add docstrings
     def create_entries(
         self,
         data: dict[FullQualifiedId, PartialModel],

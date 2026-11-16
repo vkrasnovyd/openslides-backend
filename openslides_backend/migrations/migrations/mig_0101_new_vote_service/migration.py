@@ -232,6 +232,21 @@ class Migration(DiffMixin, BaseMigration):
             JOIN poll_t p ON o.poll_id = p.id
             WHERE p.content_object_id LIKE 'assignment/%' AND o.content_object_id LIKE 'motion/%';
             """)
+        # self.execute_query(
+        #     """
+        #     SELECT o.id
+        #     FROM option_t o
+        #     JOIN poll_t p ON o.poll_id = p.id
+        #     WHERE (
+        #         p.content_object_id LIKE 'assignment/%'
+        #         AND o.used_as_global_option_in_poll_id IS NULL
+        #         AND NOT (
+        #             o.content_object_id LIKE 'user/%'
+        #             OR o.content_object_id LIKE 'poll_candidate_list/%'
+        #         )
+        #     );
+        #     """
+        # )
         if entries := self.cursor.fetchall():
             errors.append(
                 f"Invalid option/content_object_id: collection must be 'user' or 'poll_candidate_list' if collection of poll/content_object_id is 'assignment'.\n"
@@ -1068,6 +1083,7 @@ class Migration(DiffMixin, BaseMigration):
                 )
             ),
         )
+        # TODO: describe this weight logic in docs
         self.execute_query(
             sql.SQL("""
                 CREATE TEMP TABLE aggregated_votes_m AS
