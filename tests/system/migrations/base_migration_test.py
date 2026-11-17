@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from psycopg import Cursor, sql
 from psycopg.rows import DictRow
 
+from openslides_backend.shared.filters import Filter, BaseSqlQueryHelper, SqlArguments
 from meta.dev.src.helper_get_names import HelperGetNames
 from openslides_backend.http.application import OpenSlidesBackendWSGIApplication
 from openslides_backend.http.views import ActionView
@@ -485,3 +486,22 @@ class BaseMigrationTestCase(TestCase):
                 for column, actual, expected in diff:
                     errors.append(f"\t\t{column}: {actual} (expected: {expected})")
         raise Exception("\n".join(errors))
+
+    def assert_entries_not_exist(self, collection: Collection, filter_: Filter) -> None:
+        with get_new_os_conn() as conn:
+            with conn.cursor() as curs:
+                arguments: list[SqlArguments] = []
+                curs.execute(
+                    sql.SQL("SELECT id FROM {view} WHERE {filter};").format(
+                        view=sql.Identifier(collection),
+                        filter=BaseSqlQueryHelper.build_filter_str(
+                            filter_, arguments, collection
+                        ),
+                    ),
+                    [arguments],
+                )
+                if entries_exist := curs.fetchall():
+                    raise Exception(
+                        f"No {collection} entries should match the filter: {filter_}.\n"
+                        f"Found entries with ids: {[entry['id'] for entry in entries_exist]}\n"
+                    )

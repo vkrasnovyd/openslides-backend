@@ -1,7 +1,7 @@
 from decimal import Decimal
 from json import dumps
 from typing import Any, Literal
-
+from collections import defaultdict
 from psycopg.types.json import Jsonb
 
 from openslides_backend.action.util.crypto import get_random_string
@@ -10,6 +10,7 @@ from openslides_backend.services.postgresql.db_connection_handling import os_con
 from openslides_backend.shared.exceptions import BadCodingException
 from openslides_backend.shared.patterns import FullQualifiedId
 from openslides_backend.shared.typing import PartialModel
+from openslides_backend.shared.filters import FilterOperator
 from tests.system.migrations.base_migration_test import BaseMigrationTestCase
 
 
@@ -279,6 +280,7 @@ class TestMigration101(BaseMigrationTestCase):
             - meeting_user/vote_delegated_to_id
             - group/permissions
         """
+        # TODO: move settings field to separate test
         meeting_data: dict[FullQualifiedId, PartialModel] = self._get_meeting_data(
             1,
             {
@@ -1307,6 +1309,224 @@ class TestMigration101(BaseMigrationTestCase):
             {"group": ["permissions"]},
         )
 
+    # Use 100%-bases: entitled_present, disabled
+    # Use types: pseudoanonymous, cryptographic
+    def test_result_and_ballots(self) -> None:
+        self.set_up_organization()
+        self.create_entries(self._get_meeting_data())
+        self._create_users_for_meeting([1], [1])
+
+        test_data: dict[FullQualifiedId, PartialModel] = {}
+        for base, extra_data in enumerate(
+            (
+                {"type": "pseudoanonymous", "is_pseudoanonymized": True},
+                {"type": "cryptographic", "is_pseudoanonymized": True},
+                {"type": "analog"},
+                {"state": "created"},
+            )
+        ):
+            has_votes = base == 3
+            # Single option poll
+            motion_poll_id = base * 2 + 1
+            motion_option_id = base * 3 + 1
+            test_data.update(
+                {
+                    **self._get_motion_data(base),
+                    **self._get_poll_data(
+                        poll_id=motion_poll_id,
+                        onehundred_percent_base="entitled_present",
+                        content_object_id=f"motion/{base}",
+                        extra_data={
+                            "votesinvalid": Decimal(2),
+                            "votescast": Decimal(2),
+                            **extra_data,
+                        },
+                    ),
+                    **self._get_option_data(
+                        motion_option_id,
+                        motion_poll_id,
+                        f"motion/{base}",
+                        extra_data=({"yes": 2} if has_votes else {}),
+                    ),
+                }
+            )
+            if has_votes:
+                test_data.update(
+                    {
+                        **self._get_vote_data(
+                            base * 7 + 1, motion_option_id, "Y", 1, 1
+                        ),
+                        **self._get_vote_data(base * 7 + 2, motion_option_id, "Y"),
+                    }
+                )
+            # Multiple options poll
+            topic_poll_id = base * 2 + 2
+            topic_option_id_1 = base * 3 + 2
+            topic_option_id_2 = base * 3 + 3
+            test_data.update(
+                {
+                    **self._get_topic_data(base),
+                    **self._get_poll_data(
+                        poll_id=topic_poll_id,
+                        onehundred_percent_base="disabled",
+                        content_object_id=f"topic/{base}",
+                        extra_data={
+                            "votesinvalid": Decimal(3),
+                            "votescast": Decimal(5),
+                            **extra_data,
+                        },
+                    ),
+                    **self._get_option_data(
+                        topic_option_id_1,
+                        topic_poll_id,
+                        text="Option 1",
+                        extra_data=({"yes": 1, "abstain": 2} if has_votes else {}),
+                    ),
+                    **self._get_option_data(
+                        topic_option_id_2,
+                        topic_poll_id,
+                        text="Option 2",
+                        extra_data=({"yes": 2, "abstain": 0} if has_votes else {}),
+                    ),
+                }
+            )
+            if has_votes:
+                test_data.update(
+                    {
+                        **self._get_vote_data(
+                            base * 7 + 3, topic_option_id_1, "Y", 1, 1
+                        ),
+                        **self._get_vote_data(
+                            base * 7 + 4, topic_option_id_2, "Y", 1, 1
+                        ),
+                        **self._get_vote_data(
+                            base * 7 + 5,
+                            topic_option_id_1,
+                            "A",
+                        ),
+                        **self._get_vote_data(
+                            base * 7 + 6,
+                            topic_option_id_1,
+                            "A",
+                            user_token="pseudo-token",
+                        ),
+                        **self._get_vote_data(
+                            base * 7 + 7,
+                            topic_option_id_2,
+                            "Y",
+                            user_token="pseudo-token",
+                        ),
+                    }
+                )
+
+        self.create_entries(test_data)
+
+        manager = self.create_migration_manager()
+        self.make_migration_request(manager)
+        self.wait_for_migration_thread(self.MAX_WAIT)
+        self.assert_migration_finalized()
+
+        expected_data = defaultdict(dict)
+        # anonymized polls (1-4) --> no link between ballot and ballot_user
+        # Analog polls (5-6) --> no ballots, no ballot users, invalid votes in poll/result
+        for base in range(1, 7, 2):
+            result_data = {"invalid": base % 2 + 2} if base >= 6 else {}
+            poll_data = (
+                {} if base >= 6 else {"anonymized": True, "visibility": "secret"}
+            )
+            expected_data["poll"][base] = {
+                **poll_data,
+                "result": dumps(
+                    {
+                        "yes": "2.000000",
+                        "total_ballots": 2,
+                        **result_data,
+                        "entitled_users": 0,
+                        "entitled_users_present": 0,
+                    }
+                ),
+            }
+            expected_data["poll"][base + 1] = {
+                **poll_data,
+                "result": dumps(
+                    {
+                        "yes": "2.000000",
+                        "abstain": "3.000000",
+                        "total_ballots": 5,
+                        **result_data,
+                        "entitled_users": 0,
+                        "entitled_users_present": 0,
+                    }
+                ),
+            }
+        for base in range(1, 5, 2):
+            expected_data["poll_ballot"] = {
+                id_: {"poll_id": base, "poll_ballot_user_id": None}
+                for id_ in range(7 * base + 1, 7 + base + 8)
+            }
+            expected_data["poll_ballot_user"] = {
+                id_: {"poll_id": base, "poll_ballot_id": None}
+                for id_ in range(7 * base + 1, 7 + base + 8)
+            }
+        # [6,7, ]
+        for base in [7, 8]:
+            expected_data["poll"][base] = {"result": None}
+            ids_map = [
+                {
+                    "poll_ballot_id": poll_ballot_id,
+                    "poll_ballot_user_id": poll_ballot_user_id,
+                }
+                for poll_ballot_id, poll_ballot_user_id in zip(
+                    range(7 * base + 1, 7 + base + 8),
+                    range(7 * base + 1, 7 + base + 8),
+                )
+            ]
+            expected_data["poll_ballot"] = {
+                id_: {"poll_id": base, "poll_ballot_user_id": None}
+                for id_ in range(7 * base + 1, 7 + base + 8)
+            }
+            expected_data["poll_ballot_user"] = {
+                id_: {"poll_id": base, "poll_ballot_id": None}
+                for id_ in range(7 * base + 1, 7 + base + 8)
+            }
+
+        for collection in ["poll_ballot", "poll_ballot_user"]:
+            self.assert_entries_not_exist(
+                collection, FilterOperator("id", "in", [5, 6])
+            )
+
+        # anonymized polls --> no link between ballot and ballot_user
+        # motion, 0 options, 2 votes
+        # topic, 2 options, 4 votes
+        # ------
+        # Not finished polls --> no poll/result
+        # motion, 0 options, 2 votes
+        # topic, 2 options, 4 votes
+        # ------
+        # Analog polls --> no ballots, no ballot users, invalid votes in poll/result
+        # motion, 0 options, 2 votes
+        # topic, 2 options, 4 votes
+
+    def test_poll_meeting_setting(self) -> None:
+        pass
+
+    def test_poll_config_special_fields(self) -> None:
+        pass
+        # -- Assignment selection + topic
+        # ColumnDataSource(
+        #     "strike_out",
+        #     transformed_column_value=sql.SQL(
+        #         "(poll_m.pollmethod = 'N')"
+        #     ),
+        # ),
+        # -- topic: (check no global option)
+        # ColumnDataSource(
+        #     "allow_nota",
+        #     transformed_column_value=sql.SQL(
+        #         "(poll_m.global_option_id IS NOT NULL)"
+        #     ),
+        # ),
+
     def test_check_prerequisites(self) -> None:
         meeting_data: dict[FullQualifiedId, PartialModel] = self._get_meeting_data()
 
@@ -1501,9 +1721,110 @@ class TestMigration101(BaseMigrationTestCase):
 
         manager = self.create_migration_manager()
 
+        # pre_checks_result = self.run_pre_checks(manager)
         self.run_pre_checks(manager)
         result = self.get_stats(manager)["stats"]
         if result["status"] == MigrationState.MIGRATION_FAILED:
             raise BadCodingException(
                 f"Migration failed with message: {result['exception']}."
             )
+
+    # @patch("openslides_backend.migrations.migration_helper.MigrationHelper.write_line")
+    # def test_migration_route(self, method_mock: Mock) -> None:
+    #     """Uses migrate http route."""
+    #     wait_lock = Lock()
+    #     wait_lock.acquire()
+    #     indicator_lock = Lock()
+    #     indicator_lock.acquire()
+    #     method_mock.side_effect = self.wait_for_lock(wait_lock, indicator_lock)
+    #     # 5) Call data_manipulation of module
+    #     # Future migrations do not need to test all commands. Calling MigrationManager or MigrationHandler directly should be sufficient.
+    #     # TODO do response checks in test_migration_route.py if possible
+
+    #     response = self.request("stats")
+    #     assert response.json == {
+    #         "success": True,
+    #         "stats": {
+    #             "status": MigrationState.MIGRATION_REQUIRED,
+    #             "output": "",
+    #             "current_migration_index": MIN_NON_REL_MIGRATION,
+    #             "target_migration_index": 100,
+    #             "migratable_models": {
+    #                 "agenda_item": 15,
+    #                 "assignment": 2,
+    #                 "assignment_candidate": 5,
+    #                 "chat_group": 2,
+    #                 "committee": 1,
+    #                 "gender": 4,
+    #                 "group": 5,
+    #                 "list_of_speakers": 16,
+    #                 "mediafile": 1,
+    #                 "meeting": 1,
+    #                 "meeting_mediafile": 1,
+    #                 "meeting_user": 3,
+    #                 "motion": 4,
+    #                 "motion_block": 1,
+    #                 "motion_category": 2,
+    #                 "motion_change_recommendation": 2,
+    #                 "motion_comment": 1,
+    #                 "motion_comment_section": 1,
+    #                 "motion_state": 15,
+    #                 "motion_submitter": 4,
+    #                 "motion_supporter": 1,
+    #                 "motion_workflow": 2,
+    #                 "option": 13,
+    #                 "organization": 1,
+    #                 "organization_tag": 1,
+    #                 "personal_note": 1,
+    #                 "poll": 5,
+    #                 "projection": 4,
+    #                 "projector": 2,
+    #                 "projector_countdown": 2,
+    #                 "projector_message": 1,
+    #                 "speaker": 13,
+    #                 "structure_level": 3,
+    #                 "tag": 3,
+    #                 "theme": 3,
+    #                 "topic": 8,
+    #                 "user": 3,
+    #                 "vote": 9,
+    #             },
+    #         },
+    #     }
+
+    #     response = self.request("migrate")
+    #     assert response.json == {
+    #         "success": True,
+    #         "status": MigrationState.MIGRATION_RUNNING,
+    #         "output": self.EXPECTED_INTRODUCTION
+    #         + "For setting organization and meeting time zones using 'Europe/Berlin'.\nmigration started\n",
+    #     }
+
+    #     indicator_lock.acquire()
+    #     response = self.request("stats")
+    #     assert response.json == {
+    #         "success": True,
+    #         "stats": {
+    #             "status": MigrationState.MIGRATION_RUNNING,
+    #             "output": self.EXPECTED_INTRODUCTION
+    #             + "For setting organization and meeting time zones using 'Europe/Berlin'.\nmigration started\n",
+    #             "current_migration_index": MIN_NON_REL_MIGRATION,
+    #             "target_migration_index": 100,
+    #             "migratable_models": response.json["stats"]["migratable_models"],
+    #         },
+    #     }
+    #     assert self.request("migrate").json == {
+    #         "success": False,
+    #         "message": "Migration is running, only 'stats' or 'progress' commands are allowed.",
+    #     }
+    #     wait_lock.release()
+    #     self.wait_for_migration_thread(self.MAX_WAIT)
+
+    #     assert self.request("progress").json == {
+    #         "success": True,
+    #         "status": MigrationState.FINALIZED,
+    #         "output": "100 of 161 models written to tables.\n161 of 161 models written to tables.\nmigration finished\n",
+    #     }
+
+    #     self.assert_indices_state(MigrationState.FINALIZED)
+    #     self.check_data()
