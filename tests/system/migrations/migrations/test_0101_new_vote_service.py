@@ -564,6 +564,7 @@ class TestMigration101(BaseMigrationTestCase):
                     "min_votes_amount": 1,
                     "max_votes_amount": 4,
                     "global_option_id": 16,
+                    # "global_yes": True,  # Use this instead of abstain to catch an error
                     "global_abstain": True,
                     "votescast": Decimal(3),
                     "votesvalid": Decimal(3),
@@ -632,8 +633,9 @@ class TestMigration101(BaseMigrationTestCase):
         self.create_entries(polls_data)
 
         manager = self.create_migration_manager()
-
+        # r = self.run_pre_checks(manager)
         intermediate_result = self.make_migration_request(manager)
+        # AssertionError: 'migration_required' != <MigrationState.MIGRATION_RUNNING: 'migration_running'>
         if intermediate_result["status"] == MigrationState.MIGRATION_FAILED:
             raise BadCodingException(
                 f"Migration failed with message: {intermediate_result['exception']}."
@@ -684,6 +686,7 @@ class TestMigration101(BaseMigrationTestCase):
                     ("poll_option", 14),
                 ):
                     self.assert_entries_count(cur, collection, count)
+        # Check removed migration tables
         self.check_entries(
             {
                 "group": {
