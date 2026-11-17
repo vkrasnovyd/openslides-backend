@@ -1468,6 +1468,7 @@ class TestMigration101(BaseMigrationTestCase):
                 id_: {"poll_id": base, "poll_ballot_id": None}
                 for id_ in range(7 * base + 1, 7 + base + 8)
             }
+        # [1,2 3, 5, 7]
         # [6,7, ]
         for base in [7, 8]:
             expected_data["poll"][base] = {"result": None}
