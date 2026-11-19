@@ -1438,6 +1438,8 @@ class Migration(DiffMixin, BaseMigration):
                 ).format(source_column=sql.Identifier(source_table, column))
                 for column in [*extra_source_columns, "abstain"]
             },
+            # "entitled_users": sql.SQL("COALESCE cte_entitled_users.all"),
+            # "entitled_users_present": sql.SQL("COALESCE cte_entitled_users.present"),
             "entitled_users": sql.Identifier("cte_entitled_users", "all"),
             "entitled_users_present": sql.Identifier("cte_entitled_users", "present"),
             "invalid": sql.SQL(
@@ -1472,6 +1474,7 @@ class Migration(DiffMixin, BaseMigration):
                         Join(
                             TableRef("cte_entitled_users", is_view=True),
                             [JoinOn("poll_id", poll_m, "id")],
+                            # join_type="left",
                         )
                     ),
                     TableDataSource(
@@ -1497,9 +1500,10 @@ class Migration(DiffMixin, BaseMigration):
                 WITH cte_entitled_users AS (
                     SELECT
                         poll_id,
-                        COUNT(*) AS all,
-                        COUNT(*) FILTER(WHERE present = TRUE) AS present
-                    FROM poll_entitled_user_t
+                        COUNT(peu.id) AS all,
+                        COUNT(peu.id) FILTER(WHERE present = TRUE) AS present
+                    FROM poll_t p
+                    LEFT JOIN poll_entitled_user_t peu ON p.id = peu.poll_id
                     GROUP BY poll_id
                 )
             """

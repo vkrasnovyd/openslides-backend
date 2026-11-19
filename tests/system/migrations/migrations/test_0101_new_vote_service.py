@@ -1351,7 +1351,7 @@ class TestMigration101(BaseMigrationTestCase):
                         content_object_id=f"topic/{topic_id}",
                         extra_data={
                             "votesinvalid": Decimal(2),
-                            "votescast": Decimal(5),
+                            "votescast": Decimal(2),
                             **extra_data,
                         },
                     ),
@@ -1395,7 +1395,7 @@ class TestMigration101(BaseMigrationTestCase):
                 f"Migration failed with message: {intermediate_result['exception']}."
             )
         self.wait_for_migration_thread(self.MAX_WAIT)
-        # r = self.get_stats(manager)
+        r = self.get_stats(manager)
         self.assert_migration_finalized()
 
         expected_data = defaultdict(dict)
@@ -1415,32 +1415,31 @@ class TestMigration101(BaseMigrationTestCase):
                 "option_ids": [],
                 "ballot_ids": [base * 2 + 7, base * 2 + 8] if base != 3 else [],
                 "ballot_user_ids": [base * 5 + 1, base * 5 + 2] if base != 3 else [],
-                # "result": dumps(
-                #     {
-                #         "yes": "2.000000",
-                #         "total_ballots": 2,
-                #         **({"invalid": 3} if base == 3 else {}),
-                #         **result_data,
-                #         "entitled_users": 0,
-                #         "entitled_users_present": 0,
-                #     }
-                # ),
+                "result": dumps(
+                    {
+                        "yes": "2.000000",
+                        "total_ballots": 2,
+                        **({"invalid": 3} if base == 3 else {}),
+                        "entitled_users": 0,
+                        "entitled_users_present": 0,
+                    }
+                ),
             }
             expected_data["poll"][base * 2 + 2] = {
                 **poll_data,
                 "option_ids": [base * 3 + 2, base * 3 + 3],
                 "ballot_ids": [base * 2 + 1, base * 2 + 2] if base != 3 else [],
                 "ballot_user_ids": [base * 5 + 3, base * 5 + 5] if base != 3 else [],
-                # "result": dumps(
-                #     {
-                #         "yes": "2.000000",
-                #         "abstain": "3.000000",
-                #         "total_ballots": 5,
-                #         **({"invalid": 3} if base == 3 else {}),
-                #         "entitled_users": 0,
-                #         "entitled_users_present": 0,
-                #     }
-                # ),
+                "result": dumps(
+                    {
+                        **({"invalid": 3} if base == 3 else {}),
+                        "Option 1": "1.000000",
+                        "Option 2": "2.000000",
+                        "total_ballots": 2,
+                        "entitled_users": 0,
+                        "entitled_users_present": 0,
+                    }
+                ),
             }
         for base in range(3):
             expected_data["poll_ballot"].update(
