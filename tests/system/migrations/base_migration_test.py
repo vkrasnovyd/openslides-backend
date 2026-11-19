@@ -413,7 +413,7 @@ class BaseMigrationTestCase(TestCase):
     def check_entries(
         self,
         expected_data: ModelMap,
-        enum_list_columns: dict[Collection, list[str]],
+        enum_list_columns: dict[Collection, list[str]] = {},
     ) -> None:
         assert expected_data, "data can not be empty"
         failing_rows: dict[FullQualifiedId, list[tuple[str, Any, Any]]] = {}

@@ -1,4 +1,3 @@
-from textwrap import dedent
 from typing import Any
 
 from psycopg import sql
@@ -119,6 +118,8 @@ class Migration(DiffMixin, BaseMigration):
             "poll", "state", ["created", "finished", "published"], False
         ):
             errors.append(message)
+        # vote: Validate user_token
+        # Validate no entitled users, votes, result for created polls
 
         # onehundred_percent_base by poll type
         for poll_filter, allowed_bases, option_filter_query in (
@@ -143,9 +144,7 @@ class Migration(DiffMixin, BaseMigration):
                             OR (
                                 option.content_object_id LIKE 'user/%%'
                                 AND poll.max_votes_per_option <= 1
-                                AND poll.global_yes <> TRUE
-                                AND poll.global_no <> TRUE
-                                AND poll.global_option_id IS NULL
+                                AND poll.pollmethod IN ('YN', 'YNA')
                             )
                         )
                     )
@@ -164,11 +163,7 @@ class Migration(DiffMixin, BaseMigration):
             (
                 And(
                     self._get_filter_by_content_object_collection("assignment"),
-                    FilterOperator("global_option_id", "!=", None),
-                    Or(
-                        FilterOperator("global_yes", "=", True),
-                        FilterOperator("global_no", "=", True),
-                    ),
+                    FilterOperator("pollmethod", "in", ["Y", "N"]),
                 ),
                 [
                     "Y",
@@ -192,46 +187,39 @@ class Migration(DiffMixin, BaseMigration):
             ):
                 errors.append(message)
 
-        # pollmethod for selection polls
+        # pollmethod for topic
         if message := self._check_allowed_values(
             "poll",
             "pollmethod",
             ["Y", "N"],
             False,
-            None,
-            dedent("""
-                AND (
-                    poll.content_object_id LIKE 'topic/%%'
-                    OR(
-                        poll.content_object_id LIKE 'assignment/%%'
-                        AND option.content_object_id LIKE 'user/%%'
-                        AND (poll.global_yes = TRUE OR poll.global_no = TRUE)
-                        AND (poll.global_option_id IS NOT NULL)
-                    )
-                )
-                """),
+            self._get_filter_by_content_object_collection("topic"),
         ):
             errors.append(message)
 
         # Correct option/content_object_id
-        self.execute_query("""
+        self.execute_query(
+            """
             SELECT o.id
             FROM poll_t p
             JOIN option_t o ON o.poll_id = p.id
             WHERE p.content_object_id LIKE 'motion/%' AND o.content_object_id NOT LIKE 'motion/%';
-            """)
+            """
+        )
         if entries := self.cursor.fetchall():
             errors.append(
                 f"Invalid option/content_object_id: collection must be 'motion' if collection of poll/content_object_id is 'motion'.\n"
                 f"Affected option ids: {[entry['id'] for entry in entries]}."
             )
 
-        self.execute_query("""
+        self.execute_query(
+            """
             SELECT o.id
             FROM option_t o
             JOIN poll_t p ON o.poll_id = p.id
             WHERE p.content_object_id LIKE 'assignment/%' AND o.content_object_id LIKE 'motion/%';
-            """)
+            """
+        )
         # self.execute_query(
         #     """
         #     SELECT o.id
@@ -254,12 +242,14 @@ class Migration(DiffMixin, BaseMigration):
             )
 
         # option/text for topic polls
-        self.execute_query("""
+        self.execute_query(
+            """
             SELECT o.id
             FROM poll_t p
             JOIN option_t o ON o.poll_id = p.id
             WHERE p.content_object_id LIKE 'topic/%' AND o.text IS NULL OR o.text = '';
-            """)
+            """
+        )
         if entries := self.cursor.fetchall():
             errors.append(
                 f"Invalid option/text: can not be empty if collection of poll/content_object_id is 'topic'.\n"
@@ -277,73 +267,79 @@ class Migration(DiffMixin, BaseMigration):
             )
 
         # Valid option/used_as_global_option_in_poll_id
-        self.execute_query("""
+        self.execute_query(
+            """
             SELECT id
             FROM option o
             WHERE o.used_as_global_option_in_poll_id IS NOT NULL AND o.used_as_global_option_in_poll_id != o.poll_id;
-            """)
+            """
+        )
         if entries := self.cursor.fetchall():
             errors.append(
                 "option/used_as_global_option_in_poll_id must be equal to option/poll_id or Null.\n"
                 f"Affected option ids: {[entry['id'] for entry in entries]}."
             )
 
-        # Global option is the only selected option
-        self.execute_query("""
-            SELECT array_agg(v.id) AS ids
-            FROM vote_t v
-            JOIN option o ON o.id = v.option_id
-            GROUP BY o.poll_id, v.user_token
-            HAVING COUNT(v.id) > 1 AND BOOL_OR(o.used_as_global_option_in_poll_id IS NOT NULL);
-            """)
-        if entries := self.cursor.fetchall():
-            errors.append(
-                "When global option is selected, it must be the only selected option in a split vote.\n"
-                f"Affected vote ids groups: {[entry['ids'] for entry in entries]}."
-            )
-
-        # # One option and vote per single-option poll
-        # self.execute_query("""
-        #     SELECT DISTINCT(p.id)
-        #     FROM poll p
-        #     JOIN option_t o ON o.poll_id = p.id
-        #     WHERE (
-        #         (
-        #             p.content_object_id LIKE 'motion/%'
-        #             OR (
-        #                 p.content_object_id LIKE 'assignment/%'
-        #                 AND o.content_object_id LIKE 'poll_candidate_list/%'
-        #             )
-        #         )
-        #         AND CARDINALITY(p.option_ids) > 1
-        #     );
-        #     """)
-        # if entries := self.cursor.fetchall():
-        #     errors.append(
-        #         "Only one option should exist when poll/content_object_id collection is 'motion' or poll/content_object_id collection is 'assignment' and option/content_object_id collection is 'poll_candidate_list'.\n"
-        #         f"Affected poll ids: {[entry['id'] for entry in entries]}."
-        #     )
-
+        # # Global option is the only selected option
         # self.execute_query("""
         #     SELECT array_agg(v.id) AS ids
         #     FROM vote_t v
-        #     JOIN option_t o ON o.id = v.option_id
-        #     JOIN poll_t p ON p.id = o.poll_id
-        #     WHERE (
-        #         p.content_object_id LIKE 'motion/%'
-        #         OR (
-        #             p.content_object_id LIKE 'assignment/%'
-        #             AND o.content_object_id LIKE 'poll_candidate_list/%'
-        #         )
-        #     )
+        #     JOIN option o ON o.id = v.option_id
         #     GROUP BY o.poll_id, v.user_token
-        #     HAVING COUNT(v.id) > 1;
+        #     HAVING COUNT(v.id) > 1 AND BOOL_OR(o.used_as_global_option_in_poll_id IS NOT NULL);
         #     """)
         # if entries := self.cursor.fetchall():
         #     errors.append(
-        #         "Only one vote per user should exist when poll/content_object_id collection is 'motion' or poll/content_object_id collection is 'assignment' and option/content_object_id collection is 'poll_candidate_list'.\n"
+        #         "When global option is selected, it must be the only selected option in a split vote.\n"
         #         f"Affected vote ids groups: {[entry['ids'] for entry in entries]}."
         #     )
+
+        # One option and vote per single-option poll
+        self.execute_query(
+            """
+            SELECT DISTINCT(p.id)
+            FROM poll p
+            JOIN option_t o ON o.poll_id = p.id
+            WHERE (
+                (
+                    p.content_object_id LIKE 'motion/%'
+                    OR (
+                        p.content_object_id LIKE 'assignment/%'
+                        AND o.content_object_id LIKE 'poll_candidate_list/%'
+                    )
+                )
+                AND CARDINALITY(p.option_ids) > 1
+            );
+            """
+        )
+        if entries := self.cursor.fetchall():
+            errors.append(
+                "Only one option should exist when poll/content_object_id collection is 'motion' or poll/content_object_id collection is 'assignment' and option/content_object_id collection is 'poll_candidate_list'.\n"
+                f"Affected poll ids: {[entry['id'] for entry in entries]}."
+            )
+
+        self.execute_query(
+            """
+            SELECT array_agg(v.id) AS ids
+            FROM vote_t v
+            JOIN option_t o ON o.id = v.option_id
+            JOIN poll_t p ON p.id = o.poll_id
+            WHERE (
+                p.content_object_id LIKE 'motion/%'
+                OR (
+                    p.content_object_id LIKE 'assignment/%'
+                    AND o.content_object_id LIKE 'poll_candidate_list/%'
+                )
+            )
+            GROUP BY o.poll_id, v.user_token
+            HAVING COUNT(v.id) > 1;
+            """
+        )
+        if entries := self.cursor.fetchall():
+            errors.append(
+                "Only one vote per user should exist when poll/content_object_id collection is 'motion' or poll/content_object_id collection is 'assignment' and option/content_object_id collection is 'poll_candidate_list'.\n"
+                f"Affected vote ids groups: {[entry['ids'] for entry in entries]}."
+            )
 
         # vote/value
         if message := self._check_allowed_values(
@@ -351,32 +347,34 @@ class Migration(DiffMixin, BaseMigration):
         ):
             errors.append(message)
 
-        # Same weight per user_token + poll_id for selection and rating-approval polls
-        self.execute_query("""
-            SELECT array_agg(v.id) AS ids
-            FROM vote_t v
-            JOIN option_t o ON o.id = v.option_id
-            JOIN poll_t p ON p.id = o.poll_id
-            WHERE (
-                p.content_object_id LIKE 'topic/%'
-                OR(
-                    p.content_object_id LIKE 'assignment/%'
-                    AND o.content_object_id LIKE 'user/%'
-                    AND p.max_votes_per_option <= 1
-                )
-            )
-            GROUP BY o.poll_id, v.user_token
-            HAVING COUNT(DISTINCT(v.weight)) > 1;
-            """)
-        if entries := self.cursor.fetchall():
-            errors.append(
-                "All parts of a split vote must have the same weight.\n"
-                f"Affected vote ids groups: {[entry['ids'] for entry in entries]}."
-            )
+        # # Same weight per user_token + poll_id for selection and rating-approval polls
+        # self.execute_query("""
+        #     SELECT array_agg(v.id) AS ids
+        #     FROM vote_t v
+        #     JOIN option_t o ON o.id = v.option_id
+        #     JOIN poll_t p ON p.id = o.poll_id
+        #     WHERE (
+        #         p.content_object_id LIKE 'topic/%'
+        #         OR(
+        #             p.content_object_id LIKE 'assignment/%'
+        #             AND o.content_object_id LIKE 'user/%'
+        #             AND p.max_votes_per_option <= 1
+        #         )
+        #     )
+        #     GROUP BY o.poll_id, v.user_token
+        #     HAVING COUNT(DISTINCT(v.weight)) > 1;
+        #     """)
+        # if entries := self.cursor.fetchall():
+        #     errors.append(
+        #         "All parts of a split vote must have the same weight.\n"
+        #         f"Affected vote ids groups: {[entry['ids'] for entry in entries]}."
+        #     )
 
         # Fields that get merged for multi-option polls have same values
         for column in ["user_id", "delegated_user_id"]:
-            self.execute_query(sql.SQL("""
+            self.execute_query(
+                sql.SQL(
+                    """
                     SELECT array_agg(v.id) AS ids
                     FROM vote_t v
                     JOIN option_t o ON o.id = v.option_id
@@ -390,7 +388,9 @@ class Migration(DiffMixin, BaseMigration):
                     )
                     GROUP BY o.poll_id, v.user_token
                     HAVING COUNT(DISTINCT(v.{column})) > 1;
-                    """).format(column=sql.Identifier(column)))
+                    """
+                ).format(column=sql.Identifier(column))
+            )
             if entries := self.cursor.fetchall():
                 errors.append(
                     f"vote/{column} must be the same for all the votes with the same poll_id + user_token. \n"
@@ -709,7 +709,8 @@ class Migration(DiffMixin, BaseMigration):
         )
 
         self.execute_query("ALTER TABLE poll_m ADD COLUMN config_type varchar(32);")
-        self.execute_query("""
+        self.execute_query(
+            """
             UPDATE poll_m p
             SET config_type =
                 CASE
@@ -732,20 +733,23 @@ class Migration(DiffMixin, BaseMigration):
                                         THEN 'rating_score'
                                     ELSE
                                         CASE
-                                            WHEN (p.global_yes = TRUE OR p.global_no = TRUE) AND p.global_option_id IS NOT NULL
+                                            WHEN (p.pollmethod IN ('Y', 'N'))
                                                 THEN 'selection'
                                             ELSE 'rating_approval'
                                         END
                                 END
                         END
                 END;
-                """)
+                """
+        )
 
-        self.execute_query("""
+        self.execute_query(
+            """
             ALTER TABLE vote_m
                 ADD COLUMN poll_id integer,
                 ADD COLUMN link_user_to_ballot boolean;
-        """)
+        """
+        )
         vote_m = TableRef("vote", True)
         option_m = TableRef("option", True)
         self.update_from_other_table(
@@ -771,7 +775,8 @@ class Migration(DiffMixin, BaseMigration):
             ),
         )
 
-        self.execute_query("""
+        self.execute_query(
+            """
             INSERT INTO poll_entitled_user_t (
                 poll_id,
                 meeting_user_id,
@@ -788,7 +793,8 @@ class Migration(DiffMixin, BaseMigration):
                 AND meeting_user_t.user_id = (e->>'user_id')::integer
             ORDER BY poll_m.id, meeting_user_t.id
             RETURNING id;
-            """)
+            """
+        )
 
         self.migrate_multiple_options_polls()
         self.migrate_single_option_polls()
@@ -890,7 +896,17 @@ class Migration(DiffMixin, BaseMigration):
                 ),
             )
         ]
-        self._create_poll_ballots(vote_m, migrated_polls, new_ballot_user_ids)
+        self._create_poll_ballots(
+            vote_m,
+            [
+                entry["id"]
+                for entry in self.cursor.execute(
+                    "SELECT id FROM poll_m WHERE id = ANY(%s) and type != 'analog'",
+                    (migrated_polls,),
+                ).fetchall()
+            ],
+            new_ballot_user_ids,
+        )
 
         # Create options only for assignment polls
         poll_candidate_m = TableRef("poll_candidate", True)
@@ -1018,7 +1034,8 @@ class Migration(DiffMixin, BaseMigration):
                 ),
             )
         self.execute_query(
-            sql.SQL("""
+            sql.SQL(
+                """
                 CREATE TEMP TABLE poll_result_source_m AS
                 SELECT
                     o.poll_id,
@@ -1046,11 +1063,13 @@ class Migration(DiffMixin, BaseMigration):
                 JOIN poll_m p ON p.id = o.poll_id
                 WHERE o.poll_id = ANY(%s)
                 GROUP BY o.poll_id;
-            """),
+            """
+            ),
             [topic_polls + assignment_selection_polls + assignment_rating_score_polls],
         )
         self.execute_query(
-            sql.SQL("""
+            sql.SQL(
+                """
                 INSERT INTO poll_result_source_m (
                     poll_id,
                     options_json
@@ -1070,7 +1089,8 @@ class Migration(DiffMixin, BaseMigration):
                 FROM option_m o
                 WHERE o.poll_id = ANY(%s)
                 GROUP BY o.poll_id;
-            """),
+            """
+            ),
             [assignment_rating_approval_polls],
         )
         poll_result_source_m = TableRef("poll_result_source", True)
@@ -1085,7 +1105,8 @@ class Migration(DiffMixin, BaseMigration):
         )
         # TODO: describe this weight logic in docs
         self.execute_query(
-            sql.SQL("""
+            sql.SQL(
+                """
                 CREATE TEMP TABLE aggregated_votes_m AS
                 SELECT *
                 FROM (
@@ -1113,7 +1134,7 @@ class Migration(DiffMixin, BaseMigration):
                                     o.id::text,
                                     TRUNC(v.weight)::numeric(16,6)::text
                                 )::text
-                            ELSE array_to_string(array_agg(v.option_id), ', ')
+                            ELSE array_to_string(array_agg(v.option_id ORDER BY v.option_id), ', ')
                         END AS value
                     FROM vote_m v
                     JOIN option_m o ON o.id = v.option_id
@@ -1128,7 +1149,8 @@ class Migration(DiffMixin, BaseMigration):
                     GROUP BY v.poll_id, v.user_token
                 ) AS aggregated
                 ORDER BY aggregated.poll_id, aggregated.value;
-            """),
+            """
+            ),
             [all_polls],
         )
         new_ballot_user_ids = [
@@ -1470,7 +1492,8 @@ class Migration(DiffMixin, BaseMigration):
                 FilterOperator("id", "in", poll_ids),
                 FilterOperator("state", "=", "finished"),
             ),
-            common_table_expression=sql.SQL("""
+            common_table_expression=sql.SQL(
+                """
                 WITH cte_entitled_users AS (
                     SELECT
                         poll_id,
@@ -1479,7 +1502,8 @@ class Migration(DiffMixin, BaseMigration):
                     FROM poll_entitled_user_t
                     GROUP BY poll_id
                 )
-            """),
+            """
+            ),
         )
 
     def _create_poll_ballots(
@@ -1488,33 +1512,36 @@ class Migration(DiffMixin, BaseMigration):
         poll_ids: list[int],
         ballot_user_ids: list[int],
     ) -> None:
-        public_ballot_ids = [
-            ballot["poll_ballot_user_id"]
-            for ballot in self.insert_from_other_table(
-                "poll_ballot",
-                InsertFromTables(
-                    copy_data=[
-                        TableDataSource(
-                            source_table=Join(
-                                source_table,
-                                [],
-                                And(
-                                    FilterOperator("id", "in", ballot_user_ids),
-                                    FilterOperator("link_user_to_ballot", "=", True),
+        if ballot_user_ids:
+            public_ballot_ids = [
+                ballot["poll_ballot_user_id"]
+                for ballot in self.insert_from_other_table(
+                    "poll_ballot",
+                    InsertFromTables(
+                        copy_data=[
+                            TableDataSource(
+                                source_table=Join(
+                                    source_table,
+                                    [],
+                                    And(
+                                        FilterOperator("id", "in", ballot_user_ids),
+                                        FilterOperator(
+                                            "link_user_to_ballot", "=", True
+                                        ),
+                                    ),
                                 ),
+                                value_definition=[
+                                    ColumnDataSource("weight", "weight"),
+                                    ColumnDataSource("poll_id", "poll_id"),
+                                    ColumnDataSource("value", "value"),
+                                    ColumnDataSource("poll_ballot_user_id", "id"),
+                                ],
                             ),
-                            value_definition=[
-                                ColumnDataSource("weight", "weight"),
-                                ColumnDataSource("poll_id", "poll_id"),
-                                ColumnDataSource("value", "value"),
-                                ColumnDataSource("poll_ballot_user_id", "id"),
-                            ],
-                        ),
-                    ]
-                ),
-                return_fields=["poll_ballot_user_id"],
-            )
-        ]
+                        ]
+                    ),
+                    return_fields=["poll_ballot_user_id"],
+                )
+            ]
         self.insert_from_other_table(
             "poll_ballot",
             InsertFromTables(

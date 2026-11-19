@@ -20,9 +20,10 @@ class TestMigration101(BaseMigrationTestCase):
 
     @staticmethod
     def _get_meeting_data(
-        base: int = 1, extra_data: dict[FullQualifiedId, PartialModel] = {}
+        base: int = 1, extra_data: dict[FullQualifiedId, PartialModel] = None
     ) -> dict[FullQualifiedId, PartialModel]:
         result: dict[FullQualifiedId, PartialModel] = {}
+        extra_data = extra_data or {}
         if "committee_id" not in (
             meeting_data := extra_data.get(f"meeting/{base}", {})
         ):
@@ -32,6 +33,8 @@ class TestMigration101(BaseMigrationTestCase):
             else:
                 extra_data[f"meeting/{base}"] = {"committee_id": committee_id}
             result[f"committee/{committee_id}"] = {"name": f"Committee {committee_id}"}
+        else:
+            committee_id = meeting_data["committee_id"]
         result.update(
             {
                 f"meeting/{base}": {
@@ -511,7 +514,7 @@ class TestMigration101(BaseMigrationTestCase):
             **self._get_vote_data(10, 8, "Y", 2, 2),
             **self._get_vote_data(11, 9, "Y", 2, 2, 2),
             **self._get_vote_data(12, 8, "Y", 1, 2, 1),
-            # Assignment with global options
+            # Assignment with 'Y'/'N'
             **self._get_assignment_data(3),
             **self._get_poll_data(
                 poll_id=5,
@@ -623,13 +626,6 @@ class TestMigration101(BaseMigrationTestCase):
             **self._get_vote_data(24, 14, "N", 3, 3),
             **self._get_vote_data(25, 13, "N"),
             **self._get_vote_data(26, 16, "A"),
-            # Assignment - other (without option)
-            **self._get_assignment_data(5),
-            **self._get_poll_data(
-                poll_id=7,
-                content_object_id="assignment/5",
-                state="created",
-            ),
         }
 
         self.create_entries(polls_data)
@@ -668,7 +664,7 @@ class TestMigration101(BaseMigrationTestCase):
                     ("poll_config_approval", 2),
                     ("poll_config_rating_score", 4),
                     ("poll_config_selection", 5),
-                    ("poll_config_rating_approval", 7),
+                    ("poll_config_rating_approval", 6),
                     ("poll_entitled_user", 18),
                     ("poll_option", 18),
                 ):
@@ -683,7 +679,7 @@ class TestMigration101(BaseMigrationTestCase):
                     ("poll_config_approval", 2),
                     ("poll_config_rating_score", 1),
                     ("poll_config_selection", 2),
-                    ("poll_config_rating_approval", 2),
+                    ("poll_config_rating_approval", 1),
                     ("poll_entitled_user", 18),
                     ("poll_option", 14),
                 ):
@@ -859,19 +855,6 @@ class TestMigration101(BaseMigrationTestCase):
                         "ballot_user_ids": [17, 20, 23, 25, 26],
                         "entitled_user_ids": [16, 17, 18],
                     },
-                    7: {
-                        **base_poll_fields,
-                        "config_id": "poll_config_rating_approval/7",
-                        "content_object_id": "assignment/5",
-                        "visibility": "open",
-                        "state": "created",
-                        "published": False,
-                        "result": None,
-                        "option_ids": [],
-                        "ballot_ids": [],
-                        "ballot_user_ids": [],
-                        "entitled_user_ids": [],
-                    },
                 },
                 "poll_config_approval": {
                     1: {
@@ -929,15 +912,6 @@ class TestMigration101(BaseMigrationTestCase):
                         "max_yes_amount": None,
                         "allow_abstain": True,
                         "onehundred_percent_base": "entitled",
-                        "required_majority": "no_majority",
-                    },
-                    7: {
-                        "poll_id": 7,
-                        "min_options_amount": 1,
-                        "max_options_amount": 1,
-                        "max_yes_amount": None,
-                        "allow_abstain": False,
-                        "onehundred_percent_base": "valid",
                         "required_majority": "no_majority",
                     },
                 },
@@ -1316,28 +1290,31 @@ class TestMigration101(BaseMigrationTestCase):
         self.create_entries(self._get_meeting_data())
         self._create_users_for_meeting([1], [1])
 
+        # Test: created polls should not have votes
         test_data: dict[FullQualifiedId, PartialModel] = {}
         for base, extra_data in enumerate(
             (
+                {"is_pseudoanonymized": True},
                 {"type": "pseudoanonymous", "is_pseudoanonymized": True},
                 {"type": "cryptographic", "is_pseudoanonymized": True},
                 {"type": "analog"},
                 {"state": "created"},
             )
         ):
-            has_votes = base == 3
+            has_votes = base < 4
             # Single option poll
+            motion_id = base + 1
             motion_poll_id = base * 2 + 1
             motion_option_id = base * 3 + 1
             test_data.update(
                 {
-                    **self._get_motion_data(base),
+                    **self._get_motion_data(motion_id),
                     **self._get_poll_data(
                         poll_id=motion_poll_id,
                         onehundred_percent_base="entitled_present",
-                        content_object_id=f"motion/{base}",
+                        content_object_id=f"motion/{motion_id}",
                         extra_data={
-                            "votesinvalid": Decimal(2),
+                            "votesinvalid": Decimal(3),
                             "votescast": Decimal(2),
                             **extra_data,
                         },
@@ -1345,8 +1322,8 @@ class TestMigration101(BaseMigrationTestCase):
                     **self._get_option_data(
                         motion_option_id,
                         motion_poll_id,
-                        f"motion/{base}",
-                        extra_data=({"yes": 2} if has_votes else {}),
+                        f"motion/{motion_id}",
+                        extra_data=({"yes": 1, "no": 1} if has_votes else {}),
                     ),
                 }
             )
@@ -1354,24 +1331,26 @@ class TestMigration101(BaseMigrationTestCase):
                 test_data.update(
                     {
                         **self._get_vote_data(
-                            base * 7 + 1, motion_option_id, "Y", 1, 1
+                            base * 5 + 1, motion_option_id, "Y", 1, 1
                         ),
-                        **self._get_vote_data(base * 7 + 2, motion_option_id, "Y"),
+                        **self._get_vote_data(base * 5 + 2, motion_option_id, "N"),
                     }
                 )
             # Multiple options poll
+            topic_id = base + 1
             topic_poll_id = base * 2 + 2
             topic_option_id_1 = base * 3 + 2
             topic_option_id_2 = base * 3 + 3
             test_data.update(
                 {
-                    **self._get_topic_data(base),
+                    **self._get_topic_data(topic_id),
                     **self._get_poll_data(
                         poll_id=topic_poll_id,
-                        onehundred_percent_base="disabled",
-                        content_object_id=f"topic/{base}",
+                        onehundred_percent_base="Y",
+                        pollmethod="Y",
+                        content_object_id=f"topic/{topic_id}",
                         extra_data={
-                            "votesinvalid": Decimal(3),
+                            "votesinvalid": Decimal(2),
                             "votescast": Decimal(5),
                             **extra_data,
                         },
@@ -1380,13 +1359,13 @@ class TestMigration101(BaseMigrationTestCase):
                         topic_option_id_1,
                         topic_poll_id,
                         text="Option 1",
-                        extra_data=({"yes": 1, "abstain": 2} if has_votes else {}),
+                        extra_data=({"yes": 1} if has_votes else {}),
                     ),
                     **self._get_option_data(
                         topic_option_id_2,
                         topic_poll_id,
                         text="Option 2",
-                        extra_data=({"yes": 2, "abstain": 0} if has_votes else {}),
+                        extra_data=({"yes": 2} if has_votes else {}),
                     ),
                 }
             )
@@ -1394,27 +1373,15 @@ class TestMigration101(BaseMigrationTestCase):
                 test_data.update(
                     {
                         **self._get_vote_data(
-                            base * 7 + 3, topic_option_id_1, "Y", 1, 1
+                            base * 5 + 3, topic_option_id_1, "Y", 1, 1
                         ),
                         **self._get_vote_data(
-                            base * 7 + 4, topic_option_id_2, "Y", 1, 1
+                            base * 5 + 4, topic_option_id_2, "Y", 1, 1
                         ),
                         **self._get_vote_data(
-                            base * 7 + 5,
-                            topic_option_id_1,
-                            "A",
-                        ),
-                        **self._get_vote_data(
-                            base * 7 + 6,
-                            topic_option_id_1,
-                            "A",
-                            user_token="pseudo-token",
-                        ),
-                        **self._get_vote_data(
-                            base * 7 + 7,
+                            base * 5 + 5,
                             topic_option_id_2,
                             "Y",
-                            user_token="pseudo-token",
                         ),
                     }
                 )
@@ -1422,80 +1389,113 @@ class TestMigration101(BaseMigrationTestCase):
         self.create_entries(test_data)
 
         manager = self.create_migration_manager()
-        self.make_migration_request(manager)
+        intermediate_result = self.make_migration_request(manager)
+        if intermediate_result["status"] == MigrationState.MIGRATION_FAILED:
+            raise BadCodingException(
+                f"Migration failed with message: {intermediate_result['exception']}."
+            )
         self.wait_for_migration_thread(self.MAX_WAIT)
+        # r = self.get_stats(manager)
         self.assert_migration_finalized()
 
         expected_data = defaultdict(dict)
         # anonymized polls (1-4) --> no link between ballot and ballot_user
         # Analog polls (5-6) --> no ballots, no ballot users, invalid votes in poll/result
-        for base in range(1, 7, 2):
-            result_data = {"invalid": base % 2 + 2} if base >= 6 else {}
+        for base in range(4):
             poll_data = (
-                {} if base >= 6 else {"anonymized": True, "visibility": "secret"}
-            )
-            expected_data["poll"][base] = {
-                **poll_data,
-                "result": dumps(
-                    {
-                        "yes": "2.000000",
-                        "total_ballots": 2,
-                        **result_data,
-                        "entitled_users": 0,
-                        "entitled_users_present": 0,
-                    }
-                ),
-            }
-            expected_data["poll"][base + 1] = {
-                **poll_data,
-                "result": dumps(
-                    {
-                        "yes": "2.000000",
-                        "abstain": "3.000000",
-                        "total_ballots": 5,
-                        **result_data,
-                        "entitled_users": 0,
-                        "entitled_users_present": 0,
-                    }
-                ),
-            }
-        for base in range(1, 5, 2):
-            expected_data["poll_ballot"] = {
-                id_: {"poll_id": base, "poll_ballot_user_id": None}
-                for id_ in range(7 * base + 1, 7 + base + 8)
-            }
-            expected_data["poll_ballot_user"] = {
-                id_: {"poll_id": base, "poll_ballot_id": None}
-                for id_ in range(7 * base + 1, 7 + base + 8)
-            }
-        # [1,2 3, 5, 7]
-        # [6,7, ]
-        for base in [7, 8]:
-            expected_data["poll"][base] = {"result": None}
-            ids_map = [
-                {
-                    "poll_ballot_id": poll_ballot_id,
-                    "poll_ballot_user_id": poll_ballot_user_id,
+                {}
+                if base == 3
+                else {
+                    "anonymized": True,
+                    "visibility": "open" if base == 0 else "secret",
                 }
-                for poll_ballot_id, poll_ballot_user_id in zip(
-                    range(7 * base + 1, 7 + base + 8),
-                    range(7 * base + 1, 7 + base + 8),
-                )
-            ]
-            expected_data["poll_ballot"] = {
-                id_: {"poll_id": base, "poll_ballot_user_id": None}
-                for id_ in range(7 * base + 1, 7 + base + 8)
+            )
+            expected_data["poll"][base * 2 + 1] = {
+                **poll_data,
+                "option_ids": [],
+                "ballot_ids": [base * 2 + 7, base * 2 + 8] if base != 3 else [],
+                "ballot_user_ids": [base * 5 + 1, base * 5 + 2] if base != 3 else [],
+                # "result": dumps(
+                #     {
+                #         "yes": "2.000000",
+                #         "total_ballots": 2,
+                #         **({"invalid": 3} if base == 3 else {}),
+                #         **result_data,
+                #         "entitled_users": 0,
+                #         "entitled_users_present": 0,
+                #     }
+                # ),
             }
-            expected_data["poll_ballot_user"] = {
-                id_: {"poll_id": base, "poll_ballot_id": None}
-                for id_ in range(7 * base + 1, 7 + base + 8)
+            expected_data["poll"][base * 2 + 2] = {
+                **poll_data,
+                "option_ids": [base * 3 + 2, base * 3 + 3],
+                "ballot_ids": [base * 2 + 1, base * 2 + 2] if base != 3 else [],
+                "ballot_user_ids": [base * 5 + 3, base * 5 + 5] if base != 3 else [],
+                # "result": dumps(
+                #     {
+                #         "yes": "2.000000",
+                #         "abstain": "3.000000",
+                #         "total_ballots": 5,
+                #         **({"invalid": 3} if base == 3 else {}),
+                #         "entitled_users": 0,
+                #         "entitled_users_present": 0,
+                #     }
+                # ),
             }
-
+        for base in range(3):
+            expected_data["poll_ballot"].update(
+                {
+                    ballot_id: {
+                        "poll_id": poll_id,
+                        "value": value,
+                        "poll_ballot_user_id": None,
+                    }
+                    for poll_id, ballot_ids in {
+                        (base * 2 + 1): [
+                            (base * 2 + 7, "no"),
+                            (base * 2 + 8, "yes"),
+                        ],
+                        (base * 2 + 2): [
+                            (base * 2 + 1, f"{base * 3 + 2}, {base * 3 + 3}"),
+                            (base * 2 + 2, str(base * 3 + 3)),
+                        ],
+                    }.items()
+                    for ballot_id, value in ballot_ids
+                }
+            )
+            expected_data["poll_ballot_user"].update(
+                {
+                    ballot_user_id: {
+                        "poll_id": poll_id,
+                        "acting_meeting_user_id": meeting_user_id,
+                        "represented_meeting_user_id": meeting_user_id,
+                        "poll_ballot_id": None,
+                    }
+                    for poll_id, ballot_user_ids in {
+                        base * 2 + 1: [(base * 5 + 1, 101), (base * 5 + 2, None)],
+                        base * 2 + 2: [(base * 5 + 3, 101), (base * 5 + 5, None)],
+                    }.items()
+                    for ballot_user_id, meeting_user_id in ballot_user_ids
+                }
+            )
+        expected_data["poll"][9] = {
+            "option_ids": [],
+            "ballot_ids": [],
+            "ballot_user_ids": [],
+            "result": None,
+        }
+        expected_data["poll"][10] = {
+            "option_ids": [14, 15],
+            "ballot_ids": [],
+            "ballot_user_ids": [],
+            "result": None,
+        }
         for collection in ["poll_ballot", "poll_ballot_user"]:
             self.assert_entries_not_exist(
-                collection, FilterOperator("id", "in", [5, 6])
+                collection, FilterOperator("poll_id", "in", list(range(7, 11)))
             )
 
+        self.check_entries(expected_data)
         # anonymized polls --> no link between ballot and ballot_user
         # motion, 0 options, 2 votes
         # topic, 2 options, 4 votes
