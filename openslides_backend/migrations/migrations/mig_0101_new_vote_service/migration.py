@@ -118,7 +118,11 @@ class Migration(DiffMixin, BaseMigration):
             "poll", "state", ["created", "finished", "published"], False
         ):
             errors.append(message)
+        # Validate no entitled users, votes, result for created polls
+        # {"type": "pseudoanonymous", "is_pseudoanonymized": True},
+        # {"type": "cryptographic", "is_pseudoanonymized": True},
 
+        # motion_poll_default_type, assignment_poll_default_type, poll_default_type, None
         # onehundred_percent_base by poll type
         for poll_filter, allowed_bases, option_filter_query in (
             (
@@ -271,6 +275,7 @@ class Migration(DiffMixin, BaseMigration):
             )
 
         # Global option is the only selected option
+        # TODO
         self.execute_query("""
             SELECT array_agg(v.id) AS ids
             FROM vote_t v
@@ -285,6 +290,7 @@ class Migration(DiffMixin, BaseMigration):
             )
 
         # # One option and vote per single-option poll
+        # TODO
         # self.execute_query("""
         #     SELECT DISTINCT(p.id)
         #     FROM poll p
@@ -306,6 +312,7 @@ class Migration(DiffMixin, BaseMigration):
         #         f"Affected poll ids: {[entry['id'] for entry in entries]}."
         #     )
 
+        # TODO
         # self.execute_query("""
         #     SELECT array_agg(v.id) AS ids
         #     FROM vote_t v
@@ -334,6 +341,7 @@ class Migration(DiffMixin, BaseMigration):
             errors.append(message)
 
         # Same weight per user_token + poll_id for selection and rating-approval polls
+        # TODO
         self.execute_query("""
             SELECT array_agg(v.id) AS ids
             FROM vote_t v
@@ -1021,6 +1029,7 @@ class Migration(DiffMixin, BaseMigration):
                     ]
                 ),
             )
+        # CREATE TEMP TABLE ON COMMIT DROP poll_result_source_m AS
         self.execute_query(
             sql.SQL("""
                 CREATE TEMP TABLE poll_result_source_m AS

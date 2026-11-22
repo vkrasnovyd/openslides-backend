@@ -561,6 +561,7 @@ class TestMigration101(BaseMigrationTestCase):
                     "min_votes_amount": 1,
                     "max_votes_amount": 4,
                     "global_option_id": 16,
+                    # "global_yes": True,  # Use this instead of abstain to catch an error
                     "global_abstain": True,
                     "votescast": Decimal(3),
                     "votesvalid": Decimal(3),
@@ -622,8 +623,9 @@ class TestMigration101(BaseMigrationTestCase):
         self.create_entries(polls_data)
 
         manager = self.create_migration_manager()
-
+        # r = self.run_pre_checks(manager)
         intermediate_result = self.make_migration_request(manager)
+        # AssertionError: 'migration_required' != <MigrationState.MIGRATION_RUNNING: 'migration_running'>
         if intermediate_result["status"] == MigrationState.MIGRATION_FAILED:
             raise BadCodingException(
                 f"Migration failed with message: {intermediate_result['exception']}."
@@ -674,6 +676,7 @@ class TestMigration101(BaseMigrationTestCase):
                     ("poll_option", 14),
                 ):
                     self.assert_entries_count(cur, collection, count)
+        # Check removed migration tables
         self.check_entries(
             {
                 "group": {
@@ -1324,6 +1327,16 @@ class TestMigration101(BaseMigrationTestCase):
             },
             {"group": ["permissions"]},
         )
+        # TODO: also check on failed migration
+        # aggregated_votes
+        # poll_result_source
+        # meeting
+        # meeting_user
+        # option
+        # poll
+        # poll_candidate
+        # poll_candidate_list
+        # vote
 
     def test_result_and_ballots(self) -> None:
         """
@@ -1652,9 +1665,26 @@ class TestMigration101(BaseMigrationTestCase):
         )
 
     def test_check_prerequisites(self) -> None:
+
+        # def test_poll_config_special_fields(self) -> None:
+        #     pass
+        #     # -- Assignment selection + topic
+        #     # ColumnDataSource(
+        #     #     "strike_out",
+        #     #     transformed_column_value=sql.SQL(
+        #     #         "(poll_m.pollmethod = 'N')"
+        #     #     ),
+        #     # ),
+        #     # -- topic: (check no global option)
+        #     # ColumnDataSource(
+        #     #     "allow_nota",
+        #     #     transformed_column_value=sql.SQL(
+        #     #         "(poll_m.global_option_id IS NOT NULL)"
+        #     #     ),
+        #     # ),
         meeting_data: dict[FullQualifiedId, PartialModel] = self._get_meeting_data()
 
-        self.set_up_organization()
+        self.set_up_organization()  # to setUp
         self.create_entries(meeting_data)
         self._create_users_for_meeting([1, 2, 3], [1])
         self._create_users([21, 22, 23])
